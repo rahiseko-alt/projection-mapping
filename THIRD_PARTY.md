@@ -7,5 +7,6 @@
 | [ws](https://github.com/websockets/ws) | 映像の本体と受付役のつながり | MIT | npm |
 | [osc-js](https://github.com/adzialocha/osc-js) | MapMap への合図 | MIT | npm |
 | [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) | エージェント | Anthropic の利用規約（オープンソースではない） | npm |
+| [acorn](https://github.com/acornjs/acorn) | 新しい場面の動きの書き方を確かめる | MIT | npm |
 | [zod](https://github.com/colinhacks/zod) | 道具の入力の形 | MIT | npm |
 | [MapMap](https://mapmapteam.github.io/) | 動画の投影（使うときだけ） | GPL（同梱せず、外から合図を送るだけ） | 利用者が別に入れる |

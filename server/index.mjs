@@ -24,6 +24,7 @@ const mediaDir = path.join(root, 'media');
 const ROUTES = [
   ['/shared/', path.join(root, 'shared')],
   ['/vendor/maptastic/', path.join(root, 'node_modules/maptastic/src')],
+  ['/vendor/acorn/', path.join(root, 'node_modules/acorn/dist')],
   ['/', path.join(root, 'stage')],
 ];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
@@ -31,21 +32,25 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 const customForms = await loadCustomForms(root);
 for (const s of customForms.skipped) console.log(`新しい場面を読み込めませんでした: ${s.file}（${s.errors.join(' / ')}）`);
 
-const server = http.createServer(async (req, res) => {
+const server = http.createServer((req, res) => {
+  handle(req, res).catch((e) => { console.error(e); if (!res.headersSent) res.writeHead(500); res.end(); });
+});
+async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
-  let p = decodeURIComponent(url.pathname);
+  let p;
+  try { p = decodeURIComponent(url.pathname); } catch { res.writeHead(400).end(); return; }
   if (p === '/api/media') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(await listMedia(mediaDir))); return; }
   if (p.startsWith('/media/')) { await sendMedia(req, res, p); return; }
   if (p === '/api/forms') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(customForms.loaded)); return; }
   if (p === '/') p = '/index.html';
   const hit = ROUTES.find(([prefix]) => p.startsWith(prefix));
   const file = path.join(hit[1], p.slice(hit[0].length));
-  if (!file.startsWith(hit[1])) { res.writeHead(403).end(); return; }
+  if (!(file === hit[1] || file.startsWith(hit[1] + path.sep))) { res.writeHead(403).end(); return; }
   try {
     const body = await readFile(file);
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' }).end(body);
   } catch { res.writeHead(404).end('not found'); }
-});
+}
 
 // 動画は少しずつ送る（ブラウザが繰り返し再生や頭出しをするため）
 async function sendMedia(req, res, p) {
@@ -60,14 +65,15 @@ async function sendMedia(req, res, p) {
     const end = m[1] && m[2] ? Math.min(Number(m[2]), st.size - 1) : st.size - 1;
     if (start > end || start >= st.size) { res.writeHead(416, { 'Content-Range': `bytes */${st.size}` }).end(); return; }
     res.writeHead(206, { 'Content-Type': type, 'Content-Range': `bytes ${start}-${end}/${st.size}`, 'Accept-Ranges': 'bytes', 'Content-Length': end - start + 1 });
-    createReadStream(file, { start, end }).pipe(res);
+    createReadStream(file, { start, end }).on('error', () => res.destroy()).pipe(res);
   } else {
     res.writeHead(200, { 'Content-Type': type, 'Accept-Ranges': 'bytes', 'Content-Length': st.size });
-    createReadStream(file).pipe(res);
+    createReadStream(file).on('error', () => res.destroy()).pipe(res);
   }
 }
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+// このパソコンで開いた映像の本体だけをつなぐ（ほかのサイトのページからはつながせない）
+const wss = new WebSocketServer({ server, path: '/ws', verifyClient: ({ origin }) => [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`].includes(origin) });
 const broadcast = (msg) => { const s = JSON.stringify(msg); for (const c of wss.clients) if (c.readyState === 1) c.send(s); };
 const log = createLog(path.join(root, 'logs'));
 // 頭脳は、このパソコンの Claude Code のログイン（または ANTHROPIC_API_KEY）で動く。ISHI_BRAIN=off で止める。
@@ -87,6 +93,7 @@ function checkSchedule() {
   if (now === open) return;
   const closed = justClosed(open, now);
   open = now;
+  director.setOpen(open);
   broadcast({ type: 'power', open });
   log.write({ type: 'power', open });
   console.log(open ? '展示の時間になりました' : '展示の時間が終わりました');
@@ -95,6 +102,7 @@ function checkSchedule() {
     execFile(process.execPath, [path.join(root, 'server/review.mjs')], { cwd: root }, (e, out) => console.log(e ? `振り返りに失敗: ${e.message}` : '振り返りが終わりました（docs/agent/改善記録/）'));
   }
 }
+director.setOpen(open);
 if (!schedule.always) setInterval(checkSchedule, 30000);
 
 wss.on('connection', (ws) => {

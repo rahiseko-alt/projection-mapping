@@ -33,3 +33,24 @@ test('文字列の組み立てで外に触る書き方も断る', () => {
   assert.ok(checkFormCode("Math['con'+'structor']").length > 0);
   assert.ok(checkFormCode('p.vx = Math.sin(t)["x"]').length > 0);
 });
+
+test('文字の書き換え（\\u）や別の名前で、外に触る書き方も断る', () => {
+  for (const bad of [
+    'var m=\\u0070rocess.getBuiltinModule(String.fromCharCode(102,115));',
+    'const m = \\u0066etch;',
+    'p.vx = Math.constructor;',
+    'function g(){} p.vx = 1;',
+    'p.x = 5;',
+    'f.x = 1;',
+    'const a = String(1);',
+    'const p2 = p; p2.vx = 1;',
+    'Math.sin = 1;',
+  ]) assert.ok(checkFormCode(bad).length > 0, bad);
+});
+
+test('元からある5つの場面の動きは、決まりの書き方に収まっている', () => {
+  for (const f of BUILTIN_FORMS) {
+    const body = f.move.toString().replace(/^move\([^)]*\)\s*\{/, '').replace(/\}$/, '');
+    assert.deepEqual(checkFormCode(body), [], f.id);
+  }
+});

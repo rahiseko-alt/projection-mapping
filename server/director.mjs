@@ -6,7 +6,7 @@ export const IDLE_MS = 120000; // 人がいない状態が2分続いたら呼び
 export const BRAIN_TIMEOUT_MS = 10000;
 
 export function createDirector({ brain, log, broadcast, presets = undefined, now = () => Date.now(), timeoutMs = BRAIN_TIMEOUT_MS, idleMs = IDLE_MS }) {
-  const state = { audience: { people: 0, hands: 0, fists: 0 }, history: [], emptySince: now(), idleShown: false, busy: false, shown: 0 };
+  const state = { audience: { people: 0, hands: 0, fists: 0 }, history: [], emptySince: now(), idleShown: false, busy: false, shown: 0, open: true };
 
   async function show(scene, source, extra = {}) {
     let { scene: clean, errors } = sanitizeScene(scene);
@@ -40,7 +40,9 @@ export function createDirector({ brain, log, broadcast, presets = undefined, now
 
   return {
     state,
+    setOpen(open) { state.open = !!open; },
     async onSpeech(text) {
+      if (!state.open) return null; // 閉まっている間は答えない（Claude も呼ばない）
       await log.write({ type: 'speech', text });
       if (state.busy) return show(pickByKeyword(text, state.history, presets), 'keyword', { reason: 'busy' });
       state.busy = true;

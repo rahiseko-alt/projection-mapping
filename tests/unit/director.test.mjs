@@ -70,3 +70,12 @@ test('3回続くのを差し替えるときは、返事も差し替え先のも�
   assert.notEqual(sent[2].scene.form, 'rain');
   assert.notEqual(sent[2].scene.reply, '雨の返事');
 });
+
+test('閉まっている間は言葉に答えない', async () => {
+  let asked = 0;
+  const { d, sent } = rig({ brain: { decide: async () => { asked++; return { form: 'orbit' }; } } });
+  d.setOpen(false);
+  await d.onSpeech('寂しいね');
+  assert.equal(sent.length, 0);
+  assert.equal(asked, 0);
+});

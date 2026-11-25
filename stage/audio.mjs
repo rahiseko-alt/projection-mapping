@@ -3,7 +3,7 @@
 import { chimeFreq } from '/shared/sound.mjs';
 
 export function createAudio() {
-  let ac = null, master = null, echo = null, voice = null, current = null, chimes = 0, volume = 0.5, presence = 0;
+  let ac = null, master = null, echo = null, voice = null, current = null, chimes = 0, volume = 0.5, presence = 0, playing = false, suspendTimer = null;
 
   function ensure() {
     if (ac) return;
@@ -34,17 +34,22 @@ export function createAudio() {
   }
 
   return {
-    get on() { return !!ac && ac.state === 'running'; },
-    async start(sound) { ensure(); await ac.resume(); if (sound) this.setScene(sound); },
-    async stop() { if (voice) { voice.stop(); voice = null; } current = null; if (ac) setTimeout(() => ac && ac.suspend(), 2200); },
+    get on() { return playing; },
+    async start(sound) { ensure(); clearTimeout(suspendTimer); await ac.resume(); playing = true; if (sound) this.setScene(sound); },
+    async stop() {
+      playing = false;
+      if (voice) { voice.stop(); voice = null; } current = null;
+      clearTimeout(suspendTimer);
+      if (ac) suspendTimer = setTimeout(() => { if (!playing) ac.suspend(); }, 2200); // 2秒で静かに消えてから止める
+    },
     setScene(sound) {
-      if (!ac || ac.state !== 'running') { current = sound; return; }
+      if (!ac || !playing) { current = sound; return; }
       if (current && voice && JSON.stringify(current) === JSON.stringify(sound)) return;
       if (voice) voice.stop();
       current = sound; voice = startVoice(sound);
     },
     chime() {
-      if (!ac || ac.state !== 'running' || !current) return;
+      if (!ac || !playing || !current) return;
       const t = ac.currentTime, f = chimeFreq(current, chimes++);
       const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = f;
       const g = ac.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.6);

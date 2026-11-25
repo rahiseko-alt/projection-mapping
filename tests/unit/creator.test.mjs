@@ -19,7 +19,7 @@ test('確かめと試し動かしを通った場面だけを保存する', async
 
 test('通らないときは保存せず、理由を返して直させる', async () => {
   const { t, files } = rig();
-  const msg = await t.saveForm({ ...good, code: 'p.x = 1; p.y = 1; p.vx = 0; p.vy = 0;' });
+  const msg = await t.saveForm({ ...good, code: 'p.vx = (W / 2 - p.x) * .5; p.vy = (H / 2 - p.y) * .5;' });
   assert.match(msg, /保存できませんでした.*固ま/);
   assert.equal(Object.keys(files).length, 0);
   assert.equal(t.state.failures.length, 1);

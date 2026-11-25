@@ -14,19 +14,74 @@ export const BUILTIN_FORMS = [
   { id: 'orbit', name: '巡る星', edge: 'wrap', draw: 'dot', move(p, f, t, sp, W, H) { const R = 30 + p.k * Math.min(W, H) * .32, ang = p.a + t * (.5 / p.k) * sp; p.vx = p.vx * .88 + (f.x + Math.cos(ang) * R - p.x) * .01; p.vy = p.vy * .88 + (f.y + Math.sin(ang) * R * .6 - p.y) * .01; } },
 ];
 
+import { parse } from 'acorn';
+
 export const CODE_LIMIT = 1200;
-// 新しい場面の動きに書いてはいけない言葉（画面の外に触る・止まらない・外とやりとりする）
-const FORBIDDEN = /\b(window|document|globalThis|self|top|parent|fetch|XMLHttpRequest|WebSocket|import|require|process|eval|Function|constructor|prototype|__proto__|localStorage|sessionStorage|indexedDB|navigator|location|setTimeout|setInterval|while|for|do|class|async|await|this|new)\b|=>|`|\[|'|"/;
 export const ID_PATTERN = /^[a-z][a-z0-9]{1,15}$/;
 
-/** 新しい場面の動き（関数の中身の文字列）を確かめる。問題があれば理由の一覧を返す。 */
+// 新しい場面の動きに使ってよいものだけを、書き方の木（構文木）で確かめる（使ってよいものの一覧方式）。
+// 文字の見た目ではなく解釈した結果で確かめるので、\u0070rocess のような書き換えも通らない。
+// 繰り返し・関数・配列・文字列が無いので、1歩の計算は必ずすぐ終わる。
+const ARGS = new Set(['p', 'f', 't', 'sp', 'W', 'H', 'dx', 'dy', 'd']);
+const READ = { p: new Set(['x', 'y', 'vx', 'vy', 'a', 'k', 'r']), f: new Set(['x', 'y']) };
+const WRITE = { p: new Set(['vx', 'vy']) };
+export const MATH = new Set(['abs', 'sin', 'cos', 'tan', 'atan2', 'sqrt', 'hypot', 'min', 'max', 'floor', 'ceil', 'round', 'exp', 'log', 'pow', 'sign', 'random', 'PI', 'E']);
+const BIN = new Set(['+', '-', '*', '/', '%', '**', '<', '>', '<=', '>=', '===', '!==', '==', '!=']);
+const ASSIGN = new Set(['=', '+=', '-=', '*=', '/=']);
+
 export function checkFormCode(code) {
-  const errors = [];
   const c = String(code || '');
-  if (!c.trim()) errors.push('動きの中身が空');
-  if (c.length > CODE_LIMIT) errors.push(`動きの中身は${CODE_LIMIT}字以内`);
-  const m = c.match(FORBIDDEN);
-  if (m) errors.push(`使えない言葉: ${m[0]}（Math と、引数 p f t sp W H dx dy d だけで書く。[ ] と文字列は使わない）`);
+  if (!c.trim()) return ['動きの中身が空'];
+  if (c.length > CODE_LIMIT) return [`動きの中身は${CODE_LIMIT}字以内`];
+  let ast;
+  try { ast = parse(c, { ecmaVersion: 2022, sourceType: 'script' }); } catch (e) { return [`書き方の誤り: ${e.message}`]; }
+  const errors = [];
+  const locals = new Set();
+  const bad = (what) => { if (errors.length < 5) errors.push(`使えない書き方: ${what}（Math と、引数 p f t sp W H dx dy d、const・let・if、四則演算だけで書く）`); };
+  const isMember = (n, obj, props) => n.type === 'MemberExpression' && !n.computed && n.object.type === 'Identifier' && n.object.name === obj && n.property.type === 'Identifier' && props.has(n.property.name);
+  function expr(n) {
+    switch (n.type) {
+      case 'Literal': if (typeof n.value !== 'number' && typeof n.value !== 'boolean') bad('文字列などの値'); return;
+      case 'Identifier': if (!ARGS.has(n.name) && !locals.has(n.name)) bad(n.name); return;
+      case 'MemberExpression':
+        if (isMember(n, 'p', READ.p) || isMember(n, 'f', READ.f) || isMember(n, 'Math', MATH)) return;
+        return bad(n.computed ? '[ ]' : `${n.object.name || '?'}.${n.property.name || '?'}`);
+      case 'CallExpression':
+        if (!isMember(n.callee, 'Math', MATH)) return bad('Math 以外の呼び出し');
+        return n.arguments.forEach(expr);
+      case 'BinaryExpression': if (!BIN.has(n.operator)) bad(n.operator); expr(n.left); expr(n.right); return;
+      case 'LogicalExpression': expr(n.left); expr(n.right); return;
+      case 'UnaryExpression': if (!['-', '+', '!'].includes(n.operator)) bad(n.operator); expr(n.argument); return;
+      case 'ConditionalExpression': expr(n.test); expr(n.consequent); expr(n.alternate); return;
+      case 'AssignmentExpression': target(n.left); if (!ASSIGN.has(n.operator)) bad(n.operator); expr(n.right); return;
+      case 'UpdateExpression': target(n.argument); return;
+      case 'SequenceExpression': n.expressions.forEach(expr); return;
+      default: bad(n.type);
+    }
+  }
+  function target(n) {
+    if (n.type === 'Identifier' && locals.has(n.name)) return;
+    if (isMember(n, 'p', WRITE.p)) return;
+    bad('p.vx・p.vy と自分で作った変数のほかへの書き込み');
+  }
+  function stmt(n) {
+    switch (n.type) {
+      case 'ExpressionStatement': return expr(n.expression);
+      case 'VariableDeclaration':
+        if (n.kind === 'var') bad('var');
+        for (const d of n.declarations) {
+          if (d.id.type !== 'Identifier' || ARGS.has(d.id.name) || d.id.name === 'Math') { bad('引数と同じ名前の変数'); continue; }
+          if (d.init) expr(d.init);
+          locals.add(d.id.name);
+        }
+        return;
+      case 'IfStatement': expr(n.test); stmt(n.consequent); if (n.alternate) stmt(n.alternate); return;
+      case 'BlockStatement': return n.body.forEach(stmt);
+      case 'EmptyStatement': return;
+      default: bad(n.type);
+    }
+  }
+  ast.body.forEach(stmt);
   return errors;
 }
 

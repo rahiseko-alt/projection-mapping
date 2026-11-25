@@ -5,7 +5,7 @@ import { query, tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod';
 import { writeFile, mkdir, appendFile } from 'node:fs/promises';
 import path from 'node:path';
-import { BUILTIN_FORMS, CODE_LIMIT, loadCustomForm } from '../shared/forms.mjs';
+import { BUILTIN_FORMS, CODE_LIMIT, MATH, loadCustomForm } from '../shared/forms.mjs';
 import { FORMS, LIMITS, sanitizeScene, cleanKeys } from '../shared/scene.mjs';
 import { sanitizeSound, WAVES, SCALES, SOUND_LIMITS } from '../shared/sound.mjs';
 
@@ -20,7 +20,7 @@ export const CREATOR_SYSTEM = `あなたはプロジェクションマッピン�
 - f: 粒が向かう点（来場者の手。いなければゆっくり動く点）。dx, dy, d は粒から f への差と距離
 - t: 秒、sp: 速さ（0.3〜2.5）、W, H: 画面の幅と高さ
 - 手に反応させる（近づく・避ける・回るなど）と作品らしくなる
-- 使えるのは Math と引数と const/let/if だけ。for・while・関数・[ ]・文字列・new・this は使えない。${CODE_LIMIT}字以内
+- 使えるのは const・let・if と四則演算、引数（読める: p.x p.y p.vx p.vy p.a p.k p.r f.x f.y t sp W H dx dy d）、Math の ${[...MATH].join(' ')} だけ。書き込めるのは p.vx・p.vy と自分で作った変数だけ。繰り返し・関数・配列・文字列は使えない。${CODE_LIMIT}字以内
 - 保存のときに試し動かしをして、止まる・値が壊れる・重い・粒が画面から消える・1点に固まる と断られる。断られたら理由を読んで直し、もう一度 save_form を呼ぶ（${MAX_ATTEMPTS}回まで）
 - id は英小文字で始まる2〜16字、name は日本語8字以内。色は #rrggbb を3つ、speed ${LIMITS.speed[0]}〜${LIMITS.speed[1]}、count ${LIMITS.count[0]}〜${LIMITS.count[1]}、reply ${LIMITS.reply}字以内、keys はこの場面に切り替える言葉
 - sound で場面の音も決める: base 低音の高さ ${SOUND_LIMITS.base[0]}〜${SOUND_LIMITS.base[1]}Hz、wave ${WAVES.join('/')}、bright 明るさ 0〜1、pulse 揺れ 0〜4回/秒、scale 手を握ったときの鈴 ${Object.keys(SCALES).join('/')}（calm 穏やか、bright 明るい、dark 切ない）
