@@ -36,9 +36,10 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({ server, path: '/ws' });
 const broadcast = (msg) => { const s = JSON.stringify(msg); for (const c of wss.clients) if (c.readyState === 1) c.send(s); };
 const log = createLog(path.join(root, 'logs'));
-const brain = process.env.ANTHROPIC_API_KEY
-  ? createBrain({ getLearned: () => loadLearned(root), getNotes: () => loadNotes(root) })
-  : null;
+// 頭脳は、このパソコンの Claude Code のログイン（または ANTHROPIC_API_KEY）で動く。ISHI_BRAIN=off で止める。
+const brain = process.env.ISHI_BRAIN === 'off'
+  ? null
+  : createBrain({ getLearned: () => loadLearned(root), getNotes: () => loadNotes(root) });
 const mapmap = createMapmap();
 const director = createDirector({ brain, log, broadcast: (m) => { broadcast(m); if (m.type === 'scene') mapmap.onScene(m.scene); } });
 
@@ -55,5 +56,9 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`意思を持つ光: http://localhost:${PORT} を Chrome で開いてください`);
-  console.log(brain ? '頭脳: Claude（ANTHROPIC_API_KEY あり）' : '頭脳: なし（キーワードで反応。ANTHROPIC_API_KEY を設定すると Claude が判断します）');
+  console.log(brain ? '頭脳: Claude（準備中…）' : '頭脳: なし（キーワードで反応）');
+  // 最初の1回は立ち上がりに時間がかかるので、来場者の前に一度だけ試しておく
+  if (brain) brain.decide({ trigger: 'warmup', audience: { people: 0 }, history: [] })
+    .then(() => console.log('頭脳: Claude（準備できました）'))
+    .catch((e) => console.log(`頭脳: Claude につながりません（${e.message}）。キーワードで反応します。Claude Code にログインしているか確かめてください`));
 });
