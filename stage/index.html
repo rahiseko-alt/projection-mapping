@@ -38,6 +38,8 @@ button,input{font:inherit}
     <button class="main" id="go" type="button">カメラを起動して始める</button>
     <button id="mic" type="button">声を聞く</button>
     <button id="shadow" type="button" aria-pressed="false">影を表示</button>
+    <button id="snd" type="button" aria-pressed="false">音を鳴らす</button>
+    <label style="display:flex;align-items:center;gap:6px;color:var(--mute)">音量<input id="vol" type="range" min="0" max="1" step="0.05" value="0.5" style="flex:0 0 110px;height:auto;padding:0"></label>
   </div>
   <form class="row" id="talk"><input id="msg" maxlength="80" autocomplete="off" placeholder="光に話しかける（試し用）" aria-label="光に話しかける"><button type="submit">送る</button></form>
   <p id="err" hidden></p>
@@ -46,9 +48,12 @@ button,input{font:inherit}
 import {HandLandmarker,PoseLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 import {FORMS,sanitizeScene,pickByKeyword,registerForm} from "/shared/scene.mjs";
 import {BUILTIN_FORMS,loadCustomForm,advance} from "/shared/forms.mjs";
+import {soundFor} from "/shared/sound.mjs";
+import {createAudio} from "/audio.mjs";
+const audio=createAudio(),SOUNDS={};
 const MOVES=Object.fromEntries(BUILTIN_FORMS.map(f=>[f.id,f]));
 // 新しく作った場面を受付役から受け取り、同じ確かめ方を通ったものだけを使う
-try{for(const def of await (await fetch('/api/forms')).json()){const r=loadCustomForm(def);if(r.form){MOVES[def.id]=r.form;registerForm({id:def.id,name:r.form.name})}}}catch(e){}
+try{for(const def of await (await fetch('/api/forms')).json()){const r=loadCustomForm(def);if(r.form){MOVES[def.id]=r.form;registerForm({id:def.id,name:r.form.name});if(def.sound)SOUNDS[def.id]=def.sound}}}catch(e){}
 const $=id=>document.getElementById(id);
 const cv=$('stage'),ctx=cv.getContext('2d'),video=$('cam');
 const S={form:'swarm',colors:['#7fe3d0','#3aa8c1','#e8fff9'],speed:1,count:550};
@@ -67,7 +72,7 @@ fill();
 function apply(raw,source){
   const {scene}=sanitizeScene(raw);
   Object.assign(S,scene);fill();
-  if(scene.form){history.push(scene.form);if(history.length>10)history.shift()}
+  if(scene.form){history.push(scene.form);if(history.length>10)history.shift();audio.setScene(soundFor(scene.form,SOUNDS))}
   $('formName').textContent=FORMS[S.form];
   if(scene.reply)say(scene.reply);
   send({type:'applied',scene,source});
@@ -114,11 +119,11 @@ function detect(){
   targets=(r.landmarks||[]).map((lm,i)=>{
     const tip=coverMap(lm[8].x,lm[8].y),w=lm[0],m=lm[9],palm=Math.hypot(w.x-m.x,w.y-m.y)+1e-3;
     const fist=[8,12,16,20].filter(j=>Math.hypot(lm[j].x-w.x,lm[j].y-w.y)<palm*1.25).length>=3;
-    if(fist&&!fists[i]){burst(tip);send({type:'gesture',kind:'fist'})}
+    if(fist&&!fists[i]){burst(tip);audio.chime();send({type:'gesture',kind:'fist'})}
     fists[i]=fist;return{...tip,fist};
   });
   // 体の認識は重いので、数フレームに1回だけ行う
-  if(pose&&frame%6===0){const pr=pose.detectForVideo(video,now);people=(pr.landmarks||[]).length}
+  if(pose&&frame%6===0){const pr=pose.detectForVideo(video,now);people=(pr.landmarks||[]).length;audio.setPresence(people)}
   $('hands').textContent=targets.length;$('people').textContent=people;
 }
 function burst(f){for(const p of parts){const dx=p.x-f.x,dy=p.y-f.y,d=Math.hypot(dx,dy)+1;if(d<260){p.vx+=dx/d*14;p.vy+=dy/d*14}}}
@@ -140,6 +145,8 @@ $('go').onclick=async()=>{
     $('go').disabled=false;$('go').textContent='もう一度試す';
   }
 };
+$('snd').onclick=async e=>{const b=e.currentTarget;if(audio.on){await audio.stop();b.textContent='音を鳴らす';b.setAttribute('aria-pressed','false')}else{await audio.start(soundFor(S.form,SOUNDS));b.textContent='音を止める';b.setAttribute('aria-pressed','true')}};
+$('vol').oninput=e=>audio.setVolume(Number(e.target.value));
 $('shadow').onclick=e=>{showShadow=!showShadow;e.currentTarget.setAttribute('aria-pressed',showShadow)};
 
 // ---- 描画 ----

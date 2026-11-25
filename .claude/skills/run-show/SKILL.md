@@ -25,7 +25,8 @@ description: 「意思を持つ光」の展示を準備・起動・振り返り�
 
 1. 新しい場面は、利用者の言葉をそのまま渡して `npm run create -- "<利用者の言葉>"` を流す。場面づくり役のエージェントが動きを書き、自動の試し動かしを通ったものだけが `config/forms/` に入る
 2. できたら名前とキーワードを伝え、`npm start` し直して試してもらう。合わなければ `config/forms/<id>.json` を消す
-3. 元からある5つの場面の決まり（名前・範囲・キーワード）は `shared/scene.mjs`、動きは `shared/forms.mjs`。直したら `npm test` を流す
+3. 場面の音は、元の5つは `shared/sound.mjs` の BUILTIN_SOUNDS、新しい場面は `config/forms/<id>.json` の sound（base・wave・bright・pulse・scale）で直す
+4. 元からある5つの場面の決まり（名前・範囲・キーワード）は `shared/scene.mjs`、動きは `shared/forms.mjs`。直したら `npm test` を流す
 
 ## 良い結果の基準
 

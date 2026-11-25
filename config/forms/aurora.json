@@ -21,5 +21,12 @@
       "カーテン"
     ]
   },
-  "createdAt": "2026-11-25T12:55:43.359Z"
+  "createdAt": "2026-11-25T12:55:43.359Z",
+  "sound": {
+    "base": 131,
+    "wave": "triangle",
+    "bright": 0.55,
+    "pulse": 0.25,
+    "scale": "calm"
+  }
 }

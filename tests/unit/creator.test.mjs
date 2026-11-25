@@ -35,3 +35,10 @@ test('元からある場面の id は使えない', async () => {
   const { t } = rig();
   assert.match(await t.saveForm({ ...good, id: 'rain' }), /保存できませんでした/);
 });
+
+test('作った場面には、範囲に収めた音も一緒に保存する', async () => {
+  const { t, files } = rig();
+  await t.saveForm({ ...good, id: 'aurora3', sound: { base: 1000, wave: 'sine', bright: 0.5, pulse: 0.3, scale: 'calm' } });
+  const saved = JSON.parse(files['/r/config/forms/aurora3.json']);
+  assert.equal(saved.sound.base, 400);
+});

@@ -2,6 +2,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import { loadCustomForm } from '../shared/forms.mjs';
 import { registerForm } from '../shared/scene.mjs';
+import { sanitizeSound } from '../shared/sound.mjs';
 import path from 'node:path';
 
 export async function loadLearned(root) {
@@ -27,7 +28,7 @@ export async function loadCustomForms(root) {
     const r = loadCustomForm(def);
     if (r.errors.length) { skipped.push({ file: f, errors: r.errors }); continue; }
     registerForm({ id: def.id, name: r.form.name, preset: def.preset });
-    loaded.push({ id: def.id, name: r.form.name, edge: def.edge, draw: def.draw, code: def.code });
+    loaded.push({ id: def.id, name: r.form.name, edge: def.edge, draw: def.draw, code: def.code, ...(def.sound ? { sound: sanitizeSound(def.sound) } : {}) });
   }
   return { loaded, skipped };
 }
