@@ -28,6 +28,11 @@ description: 「意思を持つ光」の展示を準備・起動・振り返り�
 3. 場面の音は、元の5つは `shared/sound.mjs` の BUILTIN_SOUNDS、新しい場面は `config/forms/<id>.json` の sound（base・wave・bright・pulse・scale）で直す
 4. 元からある5つの場面の決まり（名前・範囲・キーワード）は `shared/scene.mjs`、動きは `shared/forms.mjs`。直したら `npm test` を流す
 
+## 背景の動画・画像
+
+1. 利用者の素材を `media/<場面のid>/`（全場面なら `media/all/`）に置くよう案内する。使える種類は mp4・webm・mov・jpg・png・webp・gif、1つ500MBまで
+2. 素材は GitHub に上げない（`.gitignore` 済み）。利用者の素材を勝手に探したり開いたりしない
+
 ## 良い結果の基準
 
 - 命令は必ず決まった形に収まる（場面5種・色3つ・範囲内の数・返事30字以内）
