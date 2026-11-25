@@ -8,7 +8,8 @@ import { WebSocketServer } from 'ws';
 import { createLog } from './log.mjs';
 import { createDirector } from './director.mjs';
 import { createBrain } from './brain.mjs';
-import { loadLearned, loadNotes } from './learned.mjs';
+import { loadLearned, loadNotes, loadPresetOverrides } from './learned.mjs';
+import { mergePresets } from '../shared/scene.mjs';
 import { createMapmap } from './mapmap.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,7 +42,8 @@ const brain = process.env.ISHI_BRAIN === 'off'
   ? null
   : createBrain({ getLearned: () => loadLearned(root), getNotes: () => loadNotes(root) });
 const mapmap = createMapmap();
-const director = createDirector({ brain, log, broadcast: (m) => { broadcast(m); if (m.type === 'scene') mapmap.onScene(m.scene); } });
+const presets = mergePresets(await loadPresetOverrides(root));
+const director = createDirector({ brain, log, presets, broadcast: (m) => { broadcast(m); if (m.type === 'scene') mapmap.onScene(m.scene); } });
 
 wss.on('connection', (ws) => {
   ws.on('message', async (data) => {

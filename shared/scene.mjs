@@ -62,20 +62,59 @@ export function wouldRepeatThrice(history, form) {
  * エージェントにつながらないときの代わり: 言葉のキーワードで場面を選ぶ。
  * 合うものが無ければ、直前と違う場面を順番に選ぶ。
  */
-export function pickByKeyword(text, history = []) {
+export function pickByKeyword(text, history = [], presets = PRESETS) {
   const t = String(text || '');
-  const hit = PRESETS.find((p) => p.keys.some((k) => t.includes(k)));
+  const hit = presets.find((p) => p.keys.some((k) => t.includes(k)));
   if (hit && !wouldRepeatThrice(history, hit.form)) return { ...hit };
   const last = history[history.length - 1];
-  const i = PRESETS.findIndex((p) => p.form === last);
-  return { ...PRESETS[(i + 1) % PRESETS.length] };
+  const i = presets.findIndex((p) => p.form === last);
+  return { ...presets[(i + 1) % presets.length] };
 }
 
 /** 人のいない静かな場面（呼び込み）。返事は出さない。 */
-export function idleScene(history = []) {
-  const calm = PRESETS.filter((p) => p.form === 'flow' || p.form === 'bloom');
+export function idleScene(history = [], presets = PRESETS) {
+  const calm = presets.filter((p) => p.form === 'flow' || p.form === 'bloom');
   const last = history[history.length - 1];
   const p = calm.find((c) => c.form !== last) || calm[0];
   const { reply, ...rest } = p;
   return { ...rest };
+}
+
+export const KEY_LIMITS = { maxKeys: 12, maxLen: 10 };
+
+/**
+ * 振り返りで直した場面の設定（config/presets.json）を、元の設定に重ねる。
+ * overrides は { <form>: { colors, speed, count, reply, keys } }。決まりの外の値は捨てる。
+ */
+export function mergePresets(overrides = {}, base = PRESETS) {
+  return base.map((p) => {
+    const o = overrides[p.form];
+    if (!o) return { ...p };
+    const { scene } = sanitizeScene({ colors: o.colors, speed: o.speed, count: o.count, reply: o.reply });
+    const keys = cleanKeys(o.keys);
+    return { ...p, ...scene, ...(keys ? { keys } : {}) };
+  });
+}
+
+export function cleanKeys(keys) {
+  if (!Array.isArray(keys)) return null;
+  const out = [...new Set(keys.map((k) => String(k).trim()).filter((k) => k && [...k].length <= KEY_LIMITS.maxLen))].slice(0, KEY_LIMITS.maxKeys);
+  return out.length ? out : null;
+}
+
+/**
+ * 1つの場面の設定を変える。返り値の diff に「何をどう変えたか」が入る（改善記録に残すため）。
+ */
+export function applyPresetChange(overrides, form, change, base = PRESETS) {
+  if (!Object.hasOwn(FORMS, form)) return { overrides, diff: [], errors: [`form は ${Object.keys(FORMS).join('/')} のどれか`] };
+  const before = mergePresets(overrides, base).find((p) => p.form === form);
+  const { scene, errors } = sanitizeScene({ colors: change.colors, speed: change.speed, count: change.count, reply: change.reply });
+  const keys = change.keys === undefined ? null : cleanKeys(change.keys);
+  if (change.keys !== undefined && !keys) errors.push(`keys は ${KEY_LIMITS.maxLen}字以内の言葉を1〜${KEY_LIMITS.maxKeys}個`);
+  const next = { ...(overrides[form] || {}), ...scene, ...(keys ? { keys } : {}) };
+  const after = mergePresets({ ...overrides, [form]: next }, base).find((p) => p.form === form);
+  const diff = ['colors', 'speed', 'count', 'reply', 'keys']
+    .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+    .map((k) => ({ form, field: k, before: before[k], after: after[k] }));
+  return { overrides: { ...overrides, [form]: next }, diff, errors };
 }

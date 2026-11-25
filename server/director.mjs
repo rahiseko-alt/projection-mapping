@@ -5,13 +5,13 @@ import { sanitizeScene, pickByKeyword, idleScene, wouldRepeatThrice } from '../s
 export const IDLE_MS = 120000; // 人がいない状態が2分続いたら呼び込みの場面へ
 export const BRAIN_TIMEOUT_MS = 10000;
 
-export function createDirector({ brain, log, broadcast, now = () => Date.now(), timeoutMs = BRAIN_TIMEOUT_MS, idleMs = IDLE_MS }) {
+export function createDirector({ brain, log, broadcast, presets = undefined, now = () => Date.now(), timeoutMs = BRAIN_TIMEOUT_MS, idleMs = IDLE_MS }) {
   const state = { audience: { people: 0, hands: 0, fists: 0 }, history: [], emptySince: now(), idleShown: false, busy: false };
 
   async function show(scene, source, extra = {}) {
     const { scene: clean, errors } = sanitizeScene(scene);
     if (clean.form && wouldRepeatThrice(state.history, clean.form)) {
-      const alt = pickByKeyword('', state.history);
+      const alt = pickByKeyword('', state.history, presets);
       clean.form = alt.form;
       errors.push('同じ場面が3回続くため差し替えた');
     }
@@ -39,12 +39,12 @@ export function createDirector({ brain, log, broadcast, now = () => Date.now(), 
     state,
     async onSpeech(text) {
       await log.write({ type: 'speech', text });
-      if (state.busy) return show(pickByKeyword(text, state.history), 'keyword', { reason: 'busy' });
+      if (state.busy) return show(pickByKeyword(text, state.history, presets), 'keyword', { reason: 'busy' });
       state.busy = true;
       try {
         const scene = await ask({ trigger: 'speech', text });
         if (scene) return show(scene, 'agent', { text });
-        return show(pickByKeyword(text, state.history), 'keyword', { text });
+        return show(pickByKeyword(text, state.history, presets), 'keyword', { text });
       } finally { state.busy = false; }
     },
     async onAudience(a) {
@@ -54,7 +54,7 @@ export function createDirector({ brain, log, broadcast, now = () => Date.now(), 
       if (state.audience.people > 0 || state.audience.hands > 0) { state.emptySince = t; state.idleShown = false; return; }
       if (!state.idleShown && t - state.emptySince >= idleMs) {
         state.idleShown = true;
-        return show(idleScene(state.history), 'idle');
+        return show(idleScene(state.history, presets), 'idle');
       }
     },
     async onGesture(g) { await log.write({ type: 'gesture', kind: g.kind }); },

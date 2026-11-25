@@ -8,3 +8,7 @@ export async function loadLearned(root) {
 export async function loadNotes(root) {
   try { return (await readFile(path.join(root, 'config/notes.md'), 'utf8')).slice(0, 2000); } catch { return ''; }
 }
+
+export async function loadPresetOverrides(root) {
+  try { return JSON.parse(await readFile(path.join(root, 'config/presets.json'), 'utf8')); } catch { return {}; }
+}
