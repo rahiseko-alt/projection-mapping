@@ -45,3 +45,28 @@ test('人がいない状態が続いたら、静かな場面を1回だけ出す'
   assert.equal(sent[0].source, 'idle');
   assert.equal(sent[0].scene.reply, undefined);
 });
+
+test('考えている間に別の場面が出たら、古い答えは映さない', async () => {
+  let release;
+  const { d, sent } = rig({ timeoutMs: 1000, brain: { decide: () => new Promise((r) => { release = r; }) } });
+  const first = d.onSpeech('寂しいね');      // 頭脳が考え中
+  await d.onSpeech('悲しい');                  // その間の言葉はキーワードで即答
+  release({ form: 'orbit', reply: '古い返事' });
+  await first;
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].scene.form, 'rain');
+});
+
+test('時間切れのときは、頭脳に止める合図を送る', async () => {
+  let gotSignal;
+  const { d } = rig({ timeoutMs: 30, brain: { decide: (_, { signal }) => { gotSignal = signal; return new Promise(() => {}); } } });
+  await d.onSpeech('a');
+  assert.equal(gotSignal.aborted, true);
+});
+
+test('3回続くのを差し替えるときは、返事も差し替え先のものにする', async () => {
+  const { d, sent } = rig({ brain: { decide: async () => ({ form: 'rain', reply: '雨の返事' }) } });
+  await d.onSpeech('a'); await d.onSpeech('b'); await d.onSpeech('c');
+  assert.notEqual(sent[2].scene.form, 'rain');
+  assert.notEqual(sent[2].scene.reply, '雨の返事');
+});

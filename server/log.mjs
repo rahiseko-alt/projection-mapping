@@ -3,7 +3,8 @@ import { appendFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
 export function createLog(dir) {
-  const day = (d = new Date()) => d.toISOString().slice(0, 10);
+  // 日付はこのパソコンの時刻で区切る（日本なら日本時間の0時で次の日のファイルになる）
+  const day = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return {
     dir,
     async write(event) {

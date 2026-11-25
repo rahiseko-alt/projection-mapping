@@ -27,7 +27,7 @@ export const systemPrompt = () => `あなたはプロジェクションマッピ
 
 export function createBrain({ model = DEFAULT_MODEL, getLearned = async () => [], getNotes = async () => '', run = query } = {}) {
   return {
-    async decide(ctx) {
+    async decide(ctx, { signal } = {}) {
       let chosen = null;
       const setScene = tool(
         'set_scene',
@@ -53,6 +53,7 @@ export function createBrain({ model = DEFAULT_MODEL, getLearned = async () => []
           allowedTools: ['mcp__stage__set_scene'],
           maxTurns: 3,
           settingSources: [],
+          ...(signal ? { abortController: toController(signal) } : {}),
         },
       })) {
         if (m.type === 'result' && m.subtype !== 'success') throw new Error(`agent: ${m.subtype}`);
@@ -61,4 +62,10 @@ export function createBrain({ model = DEFAULT_MODEL, getLearned = async () => []
       return chosen;
     },
   };
+}
+
+function toController(signal) {
+  const c = new AbortController();
+  if (signal.aborted) c.abort(); else signal.addEventListener('abort', () => c.abort(), { once: true });
+  return c;
 }

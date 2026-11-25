@@ -17,5 +17,4 @@ set ISHI_SHOW=1
 call npm start
 echo 止まったので、10秒後に起動し直します（やめるときはこの画面を閉じる）。
 timeout /t 10 > nul
-set ISHI_SHOW=
 goto loop

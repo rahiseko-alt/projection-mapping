@@ -113,9 +113,13 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`意思を持つ光: http://localhost:${PORT} を Chrome で開いてください`);
   if (!schedule.always) console.log(`展示の時間割: ${show.open}〜${show.close}（いまは${open ? '開いています' : '閉まっています'}）`);
   // show.bat から起動したときは、展示用の Chrome を全画面で開く
+  // 画面がつながっていなければ開く。受付役が起動し直したときは、開いたままの画面が数秒でつなぎ直すので開かない。
+  // 展示用の Chrome が落ちたときは、1分つながらなければ開き直す。
   if (process.env.ISHI_SHOW === '1') {
-    const r = launchShow({ url: `http://localhost:${PORT}`, root, show });
-    console.log(r.ok ? '展示用の Chrome を開きました（止めるときは Alt+F4）' : r.reason);
+    let lastSeen = 0;
+    const openShow = () => { const r = launchShow({ url: `http://localhost:${PORT}`, root, show }); console.log(r.ok ? '展示用の Chrome を開きました（止めるときは Alt+F4、そのあと黒い画面も閉じる）' : r.reason); lastSeen = Date.now(); };
+    setTimeout(() => { if (wss.clients.size === 0) openShow(); }, 8000);
+    setInterval(() => { if (wss.clients.size > 0) lastSeen = Date.now(); else if (Date.now() - lastSeen > 60000) openShow(); }, 10000);
   }
   // start.bat から起動したときは、Chrome（無ければふだんのブラウザ）で自動で開く
   else if (process.env.ISHI_OPEN === '1' && process.platform === 'win32') {
