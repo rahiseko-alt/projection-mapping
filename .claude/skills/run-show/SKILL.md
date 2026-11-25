@@ -13,6 +13,11 @@ description: 「意思を持つ光」の展示を準備・起動・振り返り�
 2. API の鍵はファイルにもこの会話にも書かせない。PowerShell の `$env:ANTHROPIC_API_KEY` で設定してもらう
 3. うまく動かないときは「困ったとき」の節から当てはまるものを1つ選んで伝える
 
+## 自動で動かす
+
+1. `docs/run-windows.md` の「展示を自動で動かす」どおりに、`config/show.json`（時間割・プロジェクターの位置）を一緒に作る
+2. `show.bat` で起動、`autostart-on.bat` でサインイン時に自動で始まる。閉まる時刻に自動で振り返る
+
 ## 振り返る（自分で直す仕組み）
 
 1. `npm run review [日付]` を流す（日付を省くと最新の日）。振り返り役のエージェントが、場面の設定（`config/presets.json`）と頭脳への改善メモ（`config/notes.md`）を自分で直す

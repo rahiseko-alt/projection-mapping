@@ -28,12 +28,16 @@ button,input{font:inherit}
 #panel button.main{background:var(--acc);color:#05201b;border:0;font-weight:700}
 #panel input{flex:1 1 200px;height:40px;border-radius:20px;border:1px solid var(--line);background:#0b0d12;color:var(--ink);padding:0 14px}
 #panel.hide{display:none}
+#night{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity 3s;z-index:9}
+#night.on{opacity:1}
+body.auto{cursor:none}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style>
 </head>
 <body>
 <video id="cam" playsinline muted></video>
 <div id="surface"><div id="bg"></div><canvas id="stage"></canvas><p id="reply" role="status" aria-live="polite"></p></div>
+<div id="night"></div>
 <div id="panel">
   <h1>意思を持つ光</h1>
   <p>状態：<b id="st">停止中</b>　／　人：<b id="people">0</b>　手：<b id="hands">0</b>　場面：<b id="formName">漂う群れ</b></p>
@@ -93,7 +97,7 @@ function connect(){
   try{ws=new WebSocket(`ws://${location.host}/ws`)}catch(e){return setTimeout(connect,3000)}
   ws.onopen=()=>{$('link').textContent='接続中'};
   ws.onclose=()=>{$('link').textContent='未接続（キーワードで反応）';ws=null;setTimeout(connect,3000)};
-  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='scene')apply(m.scene,m.source||'agent')};
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='scene')apply(m.scene,m.source||'agent');if(m.type==='power')setPower(m.open)};
 }
 function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
 connect();
@@ -120,6 +124,7 @@ $('mic').onclick=()=>{wantVoice=!wantVoice;if(wantVoice)startVoice();else rec&&r
 function coverMap(nx,ny){const vw=video.videoWidth||640,vh=video.videoHeight||480,s=Math.max(W/vw,H/vh),dw=vw*s,dh=vh*s;return{x:(1-nx)*dw-(dw-W)/2,y:ny*dh-(dh-H)/2}}
 let frame=0;
 function detect(){
+  if(!isOpenNow)return;
   if(!hands||video.readyState<2||video.currentTime===lastVT)return;
   lastVT=video.currentTime;frame++;
   const now=performance.now();
@@ -154,6 +159,15 @@ async function showMedia(form){
   const go=()=>requestAnimationFrame(()=>el.classList.add('on'));
   if(item.kind==='video'){el.oncanplay=()=>{el.play().catch(()=>{});go()}}else el.onload=go;
 }
+// ---- 展示の時間割: 閉まっている間は暗くして音を止め、認識も休む ----
+let isOpenNow=true;
+function setPower(open){
+  if(open===isOpenNow)return;isOpenNow=open;
+  $('night').classList.toggle('on',!open);$('st').textContent=open?(hands?'動作中':'停止中'):'閉館中';
+  const b=$('snd');
+  if(!open){audio.stop();b.textContent='音を鳴らす';b.setAttribute('aria-pressed','false')}
+  else if(AUTO){audio.start(soundFor(S.form,SOUNDS)).then(()=>{b.textContent='音を止める';b.setAttribute('aria-pressed','true')}).catch(()=>{})}
+}
 function burst(f){for(const p of parts){const dx=p.x-f.x,dy=p.y-f.y,d=Math.hypot(dx,dy)+1;if(d<260){p.vx+=dx/d*14;p.vy+=dy/d*14}}}
 setInterval(()=>send({type:'audience',people,hands:targets.length,fists:fists.filter(Boolean).length,form:S.form}),2000);
 async function startCam(){
@@ -167,7 +181,7 @@ $('go').onclick=async()=>{
     const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm");
     hands=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",delegate:"CPU"},runningMode:"VIDEO",numHands:2});
     pose=await PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",delegate:"CPU"},runningMode:"VIDEO",numPoses:4}).catch(()=>null);
-    $('st').textContent='動作中';$('go').textContent='動作中';
+    $('st').textContent=isOpenNow?'動作中':'閉館中';$('go').textContent='動作中';
   }catch(e){
     err.hidden=false;err.textContent='起動できませんでした：'+(e&&e.name==='NotAllowedError'?'カメラの使用が許可されていません。':String(e&&e.message||e));
     $('go').disabled=false;$('go').textContent='もう一度試す';
@@ -204,6 +218,17 @@ requestAnimationFrame(step);
 // ---- 投影の補正（Maptastic）と操作キー ----
 let mapper=null;
 try{const {Maptastic}=await import("/vendor/maptastic/maptastic.js");mapper=new Maptastic({layers:['surface'],autoSave:true,autoLoad:true,crosshairs:true,labels:false})}catch(e){console.warn('maptastic を読み込めませんでした',e)}
+// ---- 展示用（?auto=1）: 操作板を隠し、カメラと音を自動で始める ----
+const AUTO=new URLSearchParams(location.search).get('auto')==='1';
+if(AUTO){
+  document.body.classList.add('auto');$('panel').classList.add('hide');
+  setTimeout(async()=>{
+    $('go').click();
+    if(isOpenNow){try{await audio.start(soundFor(S.form,SOUNDS));$('snd').textContent='音を止める';$('snd').setAttribute('aria-pressed','true')}catch(e){}}
+    // カメラが止まったら（つなぎ直しなど）、1分後にもう一度試す
+    setInterval(()=>{if(!hands&&!$('go').disabled)$('go').click()},60000);
+  },800);
+}
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
   if(e.key==='h'||e.key==='H')$('panel').classList.toggle('hide');
