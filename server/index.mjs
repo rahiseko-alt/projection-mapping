@@ -1,6 +1,7 @@
 // 受付役: 映像の本体（ブラウザ）を配り、WebSocket で様子と言葉を受け取り、司令塔へ渡す。
 // 起動: npm start → Chrome で http://localhost:8787 を開く。
 import http from 'node:http';
+import { exec } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +63,11 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`意思を持つ光: http://localhost:${PORT} を Chrome で開いてください`);
+  // start.bat から起動したときは、Chrome（無ければふだんのブラウザ）で自動で開く
+  if (process.env.ISHI_OPEN === '1' && process.platform === 'win32') {
+    const url = `http://localhost:${PORT}`;
+    exec(`start "" chrome --new-window ${url}`, (e) => { if (e) exec(`start "" ${url}`); });
+  }
   if (customForms.loaded.length) console.log(`新しい場面: ${customForms.loaded.map((f) => f.name).join('・')}`);
   console.log(brain ? '頭脳: Claude（準備中…）' : '頭脳: なし（キーワードで反応）');
   // 最初の1回は立ち上がりに時間がかかるので、来場者の前に一度だけ試しておく

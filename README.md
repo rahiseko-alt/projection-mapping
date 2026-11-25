@@ -16,7 +16,7 @@ Windows のパソコン（CPUだけ）と、Webカメラ・プロジェクター
 
 ## 使い方（Windows）
 
-手順は [docs/run-windows.md](docs/run-windows.md) にあります。要点だけ:
+手順は [docs/run-windows.md](docs/run-windows.md) にあります。要点だけ: Windows では **`start.bat` をダブルクリック**するだけで起動します。手で打つ場合は:
 
 ```
 npm install

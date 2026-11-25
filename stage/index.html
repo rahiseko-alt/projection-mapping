@@ -33,6 +33,7 @@ button,input{font:inherit}
   <h1>意思を持つ光</h1>
   <p>状態：<b id="st">停止中</b>　／　人：<b id="people">0</b>　手：<b id="hands">0</b>　場面：<b id="formName">漂う群れ</b></p>
   <p>受付役：<b id="link">未接続</b>　声：<b id="voice">止まっている</b></p>
+  <p>カメラを起動する前は、マウスや指が手の代わりになります（押すと光がはじける）</p>
   <p>H 操作板を隠す　F 全画面　M 四隅の補正（四隅をドラッグ、もう一度 M で終了）</p>
   <div class="row">
     <button class="main" id="go" type="button">カメラを起動して始める</button>
@@ -126,6 +127,10 @@ function detect(){
   if(pose&&frame%6===0){const pr=pose.detectForVideo(video,now);people=(pr.landmarks||[]).length;audio.setPresence(people)}
   $('hands').textContent=targets.length;$('people').textContent=people;
 }
+// カメラを起動していないときは、マウスや指が手の代わりになる（押すと「握る」）
+const surface=$('surface');
+surface.addEventListener('pointermove',e=>{if(hands)return;targets=[{x:e.clientX,y:e.clientY,fist:e.buttons>0}];clearTimeout(surface._t);surface._t=setTimeout(()=>{if(!hands)targets=[]},1500)});
+surface.addEventListener('pointerdown',e=>{if(hands)return;const f={x:e.clientX,y:e.clientY};targets=[{...f,fist:true}];burst(f);audio.chime();send({type:'gesture',kind:'fist'})});
 function burst(f){for(const p of parts){const dx=p.x-f.x,dy=p.y-f.y,d=Math.hypot(dx,dy)+1;if(d<260){p.vx+=dx/d*14;p.vy+=dy/d*14}}}
 setInterval(()=>send({type:'audience',people,hands:targets.length,fists:fists.filter(Boolean).length,form:S.form}),2000);
 async function startCam(){
