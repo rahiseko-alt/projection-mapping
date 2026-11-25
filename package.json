@@ -11,6 +11,7 @@
   "scripts": {
     "start": "node server/index.mjs",
     "review": "node server/review.mjs",
+    "create": "node server/create.mjs",
     "test": "node --test \"tests/unit/*.test.mjs\""
   },
   "dependencies": {

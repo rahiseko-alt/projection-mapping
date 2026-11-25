@@ -17,9 +17,9 @@ export function buildPrompt({ trigger, text, audience, history, learned, notes }
   ].filter(Boolean).join('\n');
 }
 
-export const SYSTEM_PROMPT = `あなたはプロジェクションマッピング作品「意思を持つ光」の意識です。
+export const systemPrompt = () => `あなたはプロジェクションマッピング作品「意思を持つ光」の意識です。
 来場者の言葉と様子を受け取り、光の場面を1つ選んで set_scene で出します。
-- 場面: ${Object.entries(FORMS).map(([k, v]) => `${k}=${v}`).join('、')}
+- 場面: ${Object.entries(FORMS).map(([k, v]) => `${k}=${v}`).join('、')}（元からある5つ以外は、新しく作った場面。言葉に合えば使ってよい）
 - 言葉の気分に合わせる（悲しい・疲れた→rain、熱い・もっと→swarm、寂しい・夜→orbit、嬉しい・花→bloom、静か・海→flow）
 - 同じ場面を3回続けない。これまでの効き目が良い場面を少し優先する
 - 返事(reply)は日本語${LIMITS.reply}字以内、詩的に、来場者に語りかける。説明や絵文字は書かない
@@ -47,7 +47,7 @@ export function createBrain({ model = DEFAULT_MODEL, getLearned = async () => []
         prompt,
         options: {
           model,
-          systemPrompt: SYSTEM_PROMPT,
+          systemPrompt: systemPrompt(),
           tools: [],
           mcpServers: { stage: server },
           allowedTools: ['mcp__stage__set_scene'],

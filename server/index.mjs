@@ -8,7 +8,7 @@ import { WebSocketServer } from 'ws';
 import { createLog } from './log.mjs';
 import { createDirector } from './director.mjs';
 import { createBrain } from './brain.mjs';
-import { loadLearned, loadNotes, loadPresetOverrides } from './learned.mjs';
+import { loadLearned, loadNotes, loadPresetOverrides, loadCustomForms } from './learned.mjs';
 import { mergePresets } from '../shared/scene.mjs';
 import { createMapmap } from './mapmap.mjs';
 
@@ -21,9 +21,13 @@ const ROUTES = [
 ];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
+const customForms = await loadCustomForms(root);
+for (const s of customForms.skipped) console.log(`新しい場面を読み込めませんでした: ${s.file}（${s.errors.join(' / ')}）`);
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   let p = decodeURIComponent(url.pathname);
+  if (p === '/api/forms') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(customForms.loaded)); return; }
   if (p === '/') p = '/index.html';
   const hit = ROUTES.find(([prefix]) => p.startsWith(prefix));
   const file = path.join(hit[1], p.slice(hit[0].length));
@@ -58,6 +62,7 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`意思を持つ光: http://localhost:${PORT} を Chrome で開いてください`);
+  if (customForms.loaded.length) console.log(`新しい場面: ${customForms.loaded.map((f) => f.name).join('・')}`);
   console.log(brain ? '頭脳: Claude（準備中…）' : '頭脳: なし（キーワードで反応）');
   // 最初の1回は立ち上がりに時間がかかるので、来場者の前に一度だけ試しておく
   if (brain) brain.decide({ trigger: 'warmup', audience: { people: 0 }, history: [] })

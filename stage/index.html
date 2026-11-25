@@ -44,7 +44,11 @@ button,input{font:inherit}
 </div>
 <script type="module">
 import {HandLandmarker,PoseLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
-import {FORMS,sanitizeScene,pickByKeyword} from "/shared/scene.mjs";
+import {FORMS,sanitizeScene,pickByKeyword,registerForm} from "/shared/scene.mjs";
+import {BUILTIN_FORMS,loadCustomForm,advance} from "/shared/forms.mjs";
+const MOVES=Object.fromEntries(BUILTIN_FORMS.map(f=>[f.id,f]));
+// 新しく作った場面を受付役から受け取り、同じ確かめ方を通ったものだけを使う
+try{for(const def of await (await fetch('/api/forms')).json()){const r=loadCustomForm(def);if(r.form){MOVES[def.id]=r.form;registerForm({id:def.id,name:r.form.name})}}}catch(e){}
 const $=id=>document.getElementById(id);
 const cv=$('stage'),ctx=cv.getContext('2d'),video=$('cam');
 const S={form:'swarm',colors:['#7fe3d0','#3aa8c1','#e8fff9'],speed:1,count:550};
@@ -87,7 +91,7 @@ function talk(text){
   if(ws&&ws.readyState===1)send({type:'speech',text,history});
   else apply(pickByKeyword(text,history),'keyword');
 }
-$('talk').onsubmit=e=>{e.preventDefault();talk($('msg').value);$('msg').value=''};
+$('talk').onsubmit=e=>{e.preventDefault();talk($('msg').value);$('msg').value='';$('msg').blur()};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;let rec=null,wantVoice=false;
 function startVoice(){
   if(!SR){$('voice').textContent='このブラウザでは使えません';return}
@@ -151,16 +155,11 @@ function step(){
   const sp=S.speed,t=performance.now()/1000;
   for(let i=0;i<parts.length;i++){
     const p=parts[i],f=focusFor(i),dx=f.x-p.x,dy=f.y-p.y,d=Math.hypot(dx,dy)+.01;
-    if(S.form==='swarm'){p.vx+=dx/d*.12*p.k*sp+Math.cos(p.a+t)*.08;p.vy+=dy/d*.12*p.k*sp+Math.sin(p.a+t)*.08;p.vx*=.96;p.vy*=.96}
-    else if(S.form==='flow'){const ang=Math.sin(p.y*.008+t*.6)*1.2+Math.cos(p.x*.006)*.8;p.vx=p.vx*.9+Math.cos(ang)*.6*sp;p.vy=p.vy*.9+Math.sin(ang)*.35*sp;if(d<140){p.vx-=dx/d*1.4;p.vy-=dy/d*1.4}}
-    else if(S.form==='bloom'){const R=40+Math.abs(Math.sin((p.a+t*.2*sp)*3))*Math.min(W,H)*.28*p.k,ang=p.a+t*.25*sp;p.vx=p.vx*.85+(f.x+Math.cos(ang)*R-p.x)*.012*sp;p.vy=p.vy*.85+(f.y+Math.sin(ang)*R-p.y)*.012*sp}
-    else if(S.form==='rain'){p.vy=p.vy*.9+(.47+.2*p.k)*sp;p.vx*=.9;if(d<120){p.vx-=dx/d*2.2;p.vy-=dy/d*.8}}
-    else{const R=30+p.k*Math.min(W,H)*.32,ang=p.a+t*(.5/p.k)*sp;p.vx=p.vx*.88+(f.x+Math.cos(ang)*R-p.x)*.01;p.vy=p.vy*.88+(f.y+Math.sin(ang)*R*.6-p.y)*.01}
-    p.x+=p.vx;p.y+=p.vy;
-    if(S.form==='rain'){if(p.y>H+10){p.y=-10;p.x=Math.random()*W}}
-    else{if(p.x<-20)p.x=W+20;if(p.x>W+20)p.x=-20;if(p.y<-20)p.y=H+20;if(p.y>H+20)p.y=-20}
+    const form=MOVES[S.form]||MOVES.swarm;
+    try{form.move(p,f,t,sp,W,H,dx,dy,d,Math)}catch(e){S.form='swarm';continue}
+    advance(p,form,W,H);
     ctx.fillStyle=p.c;
-    if(S.form==='rain')ctx.fillRect(p.x,p.y,1.2,4+p.k*5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill()}
+    if(form.draw==='streak')ctx.fillRect(p.x,p.y,1.2,4+p.k*5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill()}
   }
   requestAnimationFrame(step);
 }

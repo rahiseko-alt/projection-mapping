@@ -118,3 +118,15 @@ export function applyPresetChange(overrides, form, change, base = PRESETS) {
     .map((k) => ({ form, field: k, before: before[k], after: after[k] }));
   return { overrides: { ...overrides, [form]: next }, diff, errors };
 }
+
+/**
+ * 新しい場面を登録する（起動時に、保存された場面ごとに1回）。
+ * preset は { colors, speed, count, keys, reply }。範囲外の値は元の場面の値で埋める。
+ */
+export function registerForm({ id, name, preset = {} }) {
+  if (Object.hasOwn(FORMS, id)) return false;
+  FORMS[id] = name;
+  const { scene } = sanitizeScene(preset);
+  PRESETS.push({ label: name, keys: cleanKeys(preset.keys) || [], form: id, colors: ['#7fe3d0', '#3aa8c1', '#e8fff9'], speed: 1, count: 500, ...scene });
+  return true;
+}

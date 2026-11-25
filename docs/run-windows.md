@@ -33,6 +33,15 @@ npm run review
 何を・なぜ変えたかは `docs/agent/改善記録/` に残り、直した設定は `config/presets.json` に入って次の `npm start` から使われます。
 元に戻したいときは `config/presets.json` を消してください。
 
+## 新しい場面を作る
+
+```
+npm run create -- "オーロラみたいにゆらめいて、手を近づけると波打つ光"
+```
+
+1分ほどで新しい場面ができ、`npm start` し直すと使えます。言葉のキーワードも一緒に作られます。
+合わなければ `config/forms/<名前>.json` を消してください。作った記録は `docs/agent/場面づくり.md` に残ります。
+
 ## 動画も映すとき（MapMap）
 
 1. MapMap で層を作り、名前を場面の名前（`flow` `bloom` `swarm` `rain` `orbit`）で始める
