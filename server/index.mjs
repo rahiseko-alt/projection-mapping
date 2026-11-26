@@ -8,6 +8,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
+import QRCode from 'qrcode';
+import { createPhoneGate, lanAddress, isLoopback } from './phone.mjs';
 import { createLog } from './log.mjs';
 import { createDirector } from './director.mjs';
 import { createBrain } from './brain.mjs';
@@ -29,6 +31,13 @@ const ROUTES = [
 ];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
 
+const show = await readFile(path.join(root, 'config/show.json'), 'utf8').then(JSON.parse).catch(() => ({}));
+// スマホから参加: show.json の "phone": true か ISHI_PHONE=1 のときだけ、同じ Wi-Fi に開く
+const PHONE = show.phone === true || process.env.ISHI_PHONE === '1';
+const LAN = PHONE ? lanAddress() : null;
+const phoneUrl = LAN ? `http://${LAN}:${PORT}/phone` : null;
+const PHONE_FILES = new Set(['/phone', '/phone.html']);
+
 const customForms = await loadCustomForms(root);
 for (const s of customForms.skipped) console.log(`新しい場面を読み込めませんでした: ${s.file}（${s.errors.join(' / ')}）`);
 
@@ -39,6 +48,13 @@ async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   let p;
   try { p = decodeURIComponent(url.pathname); } catch { res.writeHead(400).end(); return; }
+  // ほかの機械（スマホ）から見られるのは、スマホ用のページだけ
+  if (!isLoopback(req.socket.remoteAddress)) { if (!PHONE || !PHONE_FILES.has(p)) { res.writeHead(403).end(); return; } }
+  if (p === '/phone') p = '/phone.html';
+  if (p === '/api/phone') {
+    const body = phoneUrl ? { url: phoneUrl, svg: await QRCode.toString(phoneUrl, { type: 'svg', margin: 1, color: { dark: '#000000', light: '#ffffff' } }) } : { url: null };
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(body)); return;
+  }
   if (p === '/api/media') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(await listMedia(mediaDir))); return; }
   if (p.startsWith('/media/')) { await sendMedia(req, res, p); return; }
   if (p === '/api/forms') { res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(customForms.loaded)); return; }
@@ -73,7 +89,29 @@ async function sendMedia(req, res, p) {
 }
 
 // このパソコンで開いた映像の本体だけをつなぐ（ほかのサイトのページからはつながせない）
-const wss = new WebSocketServer({ server, path: '/ws', verifyClient: ({ origin }) => [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`].includes(origin) });
+const wss = new WebSocketServer({ noServer: true });
+const phones = new WebSocketServer({ noServer: true });
+server.on('upgrade', (req, socket, head) => {
+  const { pathname } = new URL(req.url, 'http://localhost');
+  const origin = req.headers.origin;
+  const local = isLoopback(req.socket.remoteAddress);
+  if (pathname === '/ws' && local && [`http://localhost:${PORT}`, `http://127.0.0.1:${PORT}`].includes(origin)) return wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  if (pathname === '/phone-ws' && PHONE && origin === `http://${LAN}:${PORT}`) return phones.handleUpgrade(req, socket, head, (ws) => phones.emit('connection', ws, req));
+  socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy();
+});
+phones.on('connection', (ws) => {
+  const gate = createPhoneGate();
+  broadcast({ type: 'phones', count: phones.clients.size });
+  ws.on('close', () => broadcast({ type: 'phones', count: phones.clients.size }));
+  ws.on('message', async (data) => {
+    const m = gate.accept(String(data));
+    if (!m || !open) return;
+    try {
+      if (m.type === 'speech') { ws.send(JSON.stringify({ type: 'ok' })); await director.onSpeech(m.text); }
+      else { broadcast({ type: 'touch', x: m.x, y: m.y, tap: m.tap }); if (m.tap) await director.onGesture({ kind: 'phone' }); }
+    } catch (e) { console.error(e); }
+  });
+});
 const broadcast = (msg) => { const s = JSON.stringify(msg); for (const c of wss.clients) if (c.readyState === 1) c.send(s); };
 const log = createLog(path.join(root, 'logs'));
 // 頭脳は、このパソコンの Claude Code のログイン（または ANTHROPIC_API_KEY）で動く。ISHI_BRAIN=off で止める。
@@ -85,7 +123,6 @@ const presets = mergePresets(await loadPresetOverrides(root));
 const director = createDirector({ brain, log, presets, broadcast: (m) => { broadcast(m); if (m.type === 'scene') mapmap.onScene(m.scene); } });
 
 // ---- 展示の時間割（config/show.json）。閉まると映像と音を止め、自動で振り返る ----
-const show = await readFile(path.join(root, 'config/show.json'), 'utf8').then(JSON.parse).catch(() => ({}));
 const schedule = sanitizeSchedule(show);
 let open = isOpen(schedule);
 function checkSchedule() {
@@ -117,7 +154,8 @@ wss.on('connection', (ws) => {
   });
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, PHONE ? '0.0.0.0' : '127.0.0.1', () => {
+  if (PHONE) console.log(phoneUrl ? `スマホから参加: 同じ Wi-Fi で ${phoneUrl} （画面の Q で QR コードを出す）` : 'スマホから参加: Wi-Fi の住所が見つかりません');
   console.log(`意思を持つ光: http://localhost:${PORT} を Chrome で開いてください`);
   if (!schedule.always) console.log(`展示の時間割: ${show.open}〜${show.close}（いまは${open ? '開いています' : '閉まっています'}）`);
   // show.bat から起動したときは、展示用の Chrome を全画面で開く

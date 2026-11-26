@@ -30,25 +30,30 @@ button,input{font:inherit}
 #panel.hide{display:none}
 #night{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity 3s;z-index:9}
 #night.on{opacity:1}
+#qr{position:absolute;right:2vmin;bottom:2vmin;width:15vmin;padding:1vmin;background:#fff;border-radius:1vmin;display:none;text-align:center;color:#000;font-size:1.6vmin;line-height:1.3}
+#qr.on{display:block}
+#qr svg{display:block;width:100%;height:auto}
 body.auto{cursor:none}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style>
 </head>
 <body>
 <video id="cam" playsinline muted></video>
-<div id="surface"><div id="bg"></div><canvas id="stage"></canvas><p id="reply" role="status" aria-live="polite"></p></div>
+<div id="surface"><div id="bg"></div><canvas id="stage"></canvas><p id="reply" role="status" aria-live="polite"></p><div id="qr" aria-hidden="true"></div></div>
 <div id="night"></div>
 <div id="panel">
   <h1>意思を持つ光</h1>
   <p>状態：<b id="st">停止中</b>　／　人：<b id="people">0</b>　手：<b id="hands">0</b>　場面：<b id="formName">漂う群れ</b></p>
-  <p>受付役：<b id="link">未接続</b>　声：<b id="voice">止まっている</b></p>
+  <p>受付役：<b id="link">未接続</b>　声：<b id="voice">止まっている</b>　スマホ：<b id="phones">0</b></p>
   <p>カメラを起動する前は、マウスや指が手の代わりになります（押すと光がはじける）</p>
+  <p>Q スマホ参加の QR コードを出す・消す</p>
   <p>H 操作板を隠す　F 全画面　M 四隅の補正（四隅をドラッグ、もう一度 M で終了）</p>
   <div class="row">
     <button class="main" id="go" type="button">カメラを起動して始める</button>
     <button id="mic" type="button">声を聞く</button>
     <button id="shadow" type="button" aria-pressed="false">影を表示</button>
     <button id="snd" type="button" aria-pressed="false">音を鳴らす</button>
+    <button id="ear" type="button" aria-pressed="false">周りの音に反応</button>
     <label style="display:flex;align-items:center;gap:6px;color:var(--mute)">背景<input id="bgo" type="range" min="0" max="1" step="0.05" value="0.55" style="flex:0 0 90px;height:auto;padding:0"></label>
     <label style="display:flex;align-items:center;gap:6px;color:var(--mute)">音量<input id="vol" type="range" min="0" max="1" step="0.05" value="0.5" style="flex:0 0 110px;height:auto;padding:0"></label>
   </div>
@@ -63,6 +68,7 @@ import {BUILTIN_FORMS,loadCustomForm,advance} from "/shared/forms.mjs";
 import {soundFor} from "/shared/sound.mjs";
 import {createAudio} from "/audio.mjs";
 import {pickMedia} from "/shared/media.mjs";
+import {createListener,speedBoost} from "/shared/listen.mjs";
 const audio=createAudio(),SOUNDS={};
 const MOVES=Object.fromEntries(BUILTIN_FORMS.map(f=>[f.id,f]));
 // 新しく作った場面を受付役から受け取り、同じ確かめ方を通ったものだけを使う
@@ -99,7 +105,7 @@ function connect(){
   try{ws=new WebSocket(`ws://${location.host}/ws`)}catch(e){return setTimeout(connect,3000)}
   ws.onopen=()=>{$('link').textContent='接続中'};
   ws.onclose=()=>{$('link').textContent='未接続（キーワードで反応）';ws=null;setTimeout(connect,3000)};
-  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='scene')apply(m.scene,m.source||'agent');if(m.type==='power')setPower(m.open)};
+  ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='scene')apply(m.scene,m.source||'agent');if(m.type==='power')setPower(m.open);if(m.type==='touch')phoneTouch(m);if(m.type==='phones')$('phones').textContent=m.count};
 }
 function send(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))}
 connect();
@@ -172,6 +178,36 @@ function setPower(open){
   if(!open){audio.stop();markSound(false);targets=[]}
   else if(AUTO){audio.start(soundFor(S.form,SOUNDS)).then(()=>markSound(true)).catch(()=>{})}
 }
+// ---- 周りの音に反応する（拍手で光がはじけ、にぎやかだと速くなる） ----
+// 自分の鈴の音をマイクが拾って鳴り続けないよう、拍手では鈴を鳴らさない
+let ear=null,earEnergy=0;const earBuf=new Float32Array(1024);
+async function startEar(){
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
+  const ac=new AudioContext(),an=ac.createAnalyser();an.fftSize=1024;ac.createMediaStreamSource(stream).connect(an);
+  ear={stream,ac,an,listener:createListener()};
+}
+function stopEar(){if(!ear)return;ear.stream.getTracks().forEach(t=>t.stop());ear.ac.close();ear=null;earEnergy=0}
+function listenStep(){
+  if(!ear||!isOpenNow){earEnergy=0;return}
+  ear.an.getFloatTimeDomainData(earBuf);let sum=0;for(const v of earBuf)sum+=v*v;
+  const r=ear.listener.push(Math.sqrt(sum/earBuf.length)*3,performance.now());
+  earEnergy=r.energy;
+  if(r.hit){burst({x:W*(.25+Math.random()*.5),y:H*(.3+Math.random()*.4)});send({type:'gesture',kind:'clap'})}
+}
+function markEar(on){const b=$('ear');b.textContent=on?'音への反応を止める':'周りの音に反応';b.setAttribute('aria-pressed',String(on))}
+// ---- スマホから参加（なでると光が寄り、たたくとはじける） ----
+let phoneT=null;
+function phoneTouch(m){
+  if(!isOpenNow)return;
+  const f={x:m.x*W,y:m.y*H};
+  if(!hands||!targets.length){targets=[{...f,fist:!!m.tap}];clearTimeout(phoneT);phoneT=setTimeout(()=>{if(!hands)targets=[]},1500)}
+  if(m.tap){burst(f);audio.chime()}
+}
+async function toggleQr(force,quiet){
+  const q=$('qr');const on=force??!q.classList.contains('on');
+  if(on&&!q.innerHTML){try{const r=await (await fetch('/api/phone')).json();if(!r.url){if(!quiet)say('スマホ参加は止まっています（show.json の phone）');return}q.innerHTML=r.svg+'<div>スマホで読む</div>'}catch(e){return}}
+  q.classList.toggle('on',on);
+}
 function burst(f){for(const p of parts){const dx=p.x-f.x,dy=p.y-f.y,d=Math.hypot(dx,dy)+1;if(d<260){p.vx+=dx/d*14;p.vy+=dy/d*14}}}
 setInterval(()=>send({type:'audience',people,hands:targets.length,fists:fists.filter(Boolean).length,form:S.form}),2000);
 async function startCam(){
@@ -193,6 +229,7 @@ $('go').onclick=async()=>{
 };
 function markSound(on){const b=$('snd');b.textContent=on?'音を止める':'音を鳴らす';b.setAttribute('aria-pressed',String(on))}
 $('snd').onclick=async()=>{if(audio.on){await audio.stop();markSound(false)}else{await audio.start(soundFor(S.form,SOUNDS));markSound(true)}};
+$('ear').onclick=async()=>{if(ear){stopEar();markEar(false)}else{try{await startEar();markEar(true)}catch(e){say('マイクを使えませんでした')}}};
 $('vol').oninput=e=>audio.setVolume(Number(e.target.value));
 $('bgo').oninput=e=>document.documentElement.style.setProperty('--bgo',e.target.value);
 $('shadow').onclick=e=>{showShadow=!showShadow;e.currentTarget.setAttribute('aria-pressed',showShadow)};
@@ -207,7 +244,8 @@ function step(){
   detect();
   ctx.globalCompositeOperation='destination-out';ctx.fillStyle='rgba(0,0,0,.2)';ctx.fillRect(0,0,W,H);ctx.globalCompositeOperation='source-over';
   if(showShadow&&video.readyState>=2){const vw=video.videoWidth,vh=video.videoHeight,s=Math.max(W/vw,H/vh);ctx.save();ctx.globalAlpha=.12;ctx.translate(W,0);ctx.scale(-1,1);ctx.drawImage(video,(W-vw*s)/2,(H-vh*s)/2,vw*s,vh*s);ctx.restore()}
-  const sp=S.speed,t=performance.now()/1000;
+  listenStep();
+  const sp=S.speed*speedBoost(earEnergy),t=performance.now()/1000;
   for(let i=0;i<parts.length;i++){
     const p=parts[i],f=focusFor(i),dx=f.x-p.x,dy=f.y-p.y,d=Math.hypot(dx,dy)+.01;
     const form=MOVES[S.form]||MOVES.swarm;
@@ -229,6 +267,8 @@ if(AUTO){
   setTimeout(async()=>{
     $('go').click();
     if(isOpenNow){try{await audio.start(soundFor(S.form,SOUNDS));markSound(true)}catch(e){}}
+    try{await startEar();markEar(true)}catch(e){}
+    toggleQr(true,true);
     // カメラが止まったら（つなぎ直しなど）、1分後にもう一度試す
     setInterval(()=>{if(!hands&&!$('go').disabled)$('go').click()},60000);
   },800);
@@ -236,6 +276,7 @@ if(AUTO){
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
   if(e.key==='h'||e.key==='H')$('panel').classList.toggle('hide');
+  if(e.key==='q'||e.key==='Q')toggleQr();
   if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
   // M は Maptastic 自身の Shift+Space と同じ働き
   if((e.key==='m'||e.key==='M')&&mapper&&mapper.setConfigEnabled){mapper._mOn=!mapper._mOn;mapper.setConfigEnabled(mapper._mOn)}
