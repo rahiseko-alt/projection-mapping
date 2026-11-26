@@ -37,6 +37,8 @@ canvas.extra{position:absolute;left:0;top:0;width:100vw;height:100vh}
 #qr.on{display:block}
 #qr svg{display:block;width:100%;height:auto}
 body.auto{cursor:none}
+#camview{position:fixed;left:12px;top:12px;width:320px;height:240px;border-radius:10px;border:1px solid var(--line);z-index:10;display:none}
+#camview.on{display:block}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 </style>
 </head>
@@ -44,6 +46,7 @@ body.auto{cursor:none}
 <video id="cam" playsinline muted></video>
 <div id="surface"><div id="bg"></div><canvas id="stage"></canvas><p id="reply" role="status" aria-live="polite"></p><div id="qr" aria-hidden="true"></div></div>
 <canvas id="masks"></canvas>
+<canvas id="camview" width="320" height="240" aria-label="カメラの映り"></canvas>
 <div id="night"></div>
 <div id="panel">
   <h1>意思を持つ光</h1>
@@ -51,10 +54,11 @@ body.auto{cursor:none}
   <p>受付役：<b id="link">未接続</b>　声：<b id="voice">止まっている</b>　スマホ：<b id="phones">0</b></p>
   <p>カメラを起動する前は、マウスや指が手の代わりになります（押すと光がはじける）</p>
   <p>Q スマホ参加の QR コードを出す・消す　K 黒く塗る区域を描く（クリックで点、Enter で閉じる、Backspace で戻す、もう一度 K で終了）</p>
-  <p>H 操作板を隠す　F 全画面　M 四隅の補正（四隅をドラッグ、もう一度 M で終了）</p>
+  <p>C カメラの映りを出す・消す　H 操作板を隠す　F 全画面　M 四隅の補正（四隅をドラッグ、もう一度 M で終了）</p>
   <div class="row">
     <button class="main" id="go" type="button">カメラを起動して始める</button>
     <button id="mic" type="button">声を聞く</button>
+    <button id="camv" type="button" aria-pressed="false">カメラの映り</button>
     <button id="shadow" type="button" aria-pressed="false">影を表示</button>
     <button id="snd" type="button" aria-pressed="false">音を鳴らす</button>
     <button id="ear" type="button" aria-pressed="false">周りの音に反応</button>
@@ -67,7 +71,6 @@ body.auto{cursor:none}
 </div>
 <script type="importmap">{"imports":{"acorn":"/vendor/acorn/acorn.mjs"}}</script>
 <script type="module">
-import {HandLandmarker,PoseLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3";
 import {FORMS,sanitizeScene,pickByKeyword,registerForm} from "/shared/scene.mjs";
 import {BUILTIN_FORMS,loadCustomForm,advance} from "/shared/forms.mjs";
 import {soundFor} from "/shared/sound.mjs";
@@ -137,30 +140,48 @@ $('mic').onclick=()=>{wantVoice=!wantVoice;if(wantVoice)startVoice();else rec&&r
 
 // ---- カメラと認識（CPU） ----
 function coverMap(nx,ny){const vw=video.videoWidth||640,vh=video.videoHeight||480,s=Math.max(W/vw,H/vh),dw=vw*s,dh=vh*s;return{x:(1-nx)*dw-(dw-W)/2,y:ny*dh-(dh-H)/2}}
-// 認識は CPU で重いので、描画とは別の間隔で行う（光は毎コマ描き、認識は手=1秒15回・体=1秒3回まで）
-const HAND_MS=66,POSE_MS=330;let lastHand=0,lastPose=0;
+// 認識は別の担当（vision-worker.mjs）が行う。光は毎コマ描き、認識は前の1回が終わったら次の1コマを渡す
+let vision=null,busy=false,lastPose=0,lastLm=[];const POSE_MS=330;
 function detect(){
   if(!isOpenNow)return;
-  if(!hands||video.readyState<2||video.currentTime===lastVT)return;
-  const now=performance.now();
-  if(now-lastHand<HAND_MS)return;
-  lastVT=video.currentTime;lastHand=now;
-  const r=hands.detectForVideo(video,now);
-  targets=(r.landmarks||[]).map((lm,i)=>{
-    const tip=coverMap(lm[8].x,lm[8].y),w=lm[0],m=lm[9],palm=Math.hypot(w.x-m.x,w.y-m.y)+1e-3;
-    const fist=[8,12,16,20].filter(j=>Math.hypot(lm[j].x-w.x,lm[j].y-w.y)<palm*1.25).length>=3;
+  if(!vision||busy||video.readyState<2||video.currentTime===lastVT)return;
+  lastVT=video.currentTime;busy=true;
+  const now=performance.now(),wantPose=now-lastPose>=POSE_MS;if(wantPose)lastPose=now;
+  createImageBitmap(video).then(bitmap=>vision.postMessage({type:'frame',bitmap,ts:now,wantPose,bodyOn},[bitmap])).catch(()=>{busy=false});
+}
+function onVision(m){
+  busy=false;
+  lastLm=m.hands;
+  targets=m.hands.map((lm,i)=>{
+    const P=j=>({x:lm[j][0],y:lm[j][1]});
+    const tip=coverMap(lm[8][0],lm[8][1]),w=P(0),mm=P(9),palm=Math.hypot(w.x-mm.x,w.y-mm.y)+1e-3;
+    const fist=[8,12,16,20].filter(j=>Math.hypot(lm[j][0]-w.x,lm[j][1]-w.y)<palm*1.25).length>=3;
     if(fist&&!fists[i]){burst(tip);audio.chime();send({type:'gesture',kind:'fist'})}
     fists[i]=fist;return{...tip,fist};
   });
-  if(pose&&now-lastPose>=POSE_MS){
-    lastPose=now;
-    const pr=pose.detectForVideo(video,now);people=(pr.landmarks||[]).length;audio.setPresence(people);
-    // 人の形: 何人いても1枚の升目に重ねる
-    const masks=pr.segmentationMasks||[];
-    if(bodyOn&&masks.length){let merged=null;for(const m of masks){const f=buildField(m.getAsFloat32Array(),m.width,m.height);if(!merged)merged=f;else for(let i=0;i<f.length;i++)merged[i]=Math.max(merged[i],f[i]);m.close()}body=merged}
-    else{masks.forEach(m=>m.close());body=null}
-  }
+  if(m.people!==null){people=m.people;audio.setPresence(people)}
+  if(m.body!==undefined)body=bodyOn?m.body:null;
   $('hands').textContent=targets.length;$('people').textContent=people;
+}
+// ---- カメラの映り（左上の小窓）: 自分がどう映り、手をどこに見つけたかを見せる ----
+const cam=$('camview'),cctx=cam.getContext('2d');let camOn=false;
+function setCamView(on){camOn=on;cam.classList.toggle('on',on);$('camv').setAttribute('aria-pressed',String(on))}
+function drawCamView(){
+  if(!camOn||video.readyState<2)return;
+  const w=cam.width,h=cam.height;
+  cctx.save();cctx.translate(w,0);cctx.scale(-1,1);cctx.drawImage(video,0,0,w,h);cctx.restore();
+  for(let i=0;i<lastLm.length;i++){
+    const lm=lastLm[i];cctx.fillStyle='#7fe3d0';
+    for(const [x,y] of lm){cctx.beginPath();cctx.arc((1-x)*w,y*h,2.5,0,6.283);cctx.fill()}
+    const [tx,ty]=lm[8];cctx.strokeStyle=fists[i]?'#ff6b6b':'#ffe066';cctx.lineWidth=3;cctx.beginPath();cctx.arc((1-tx)*w,ty*h,9,0,6.283);cctx.stroke();
+  }
+  cctx.fillStyle='rgba(0,0,0,.55)';cctx.fillRect(0,h-22,w,22);cctx.fillStyle='#fff';cctx.font='13px sans-serif';
+  cctx.fillText(lastLm.length?`手を${lastLm.length}つ発見（黄＝指先 赤＝握った）`:'手が見つかりません',8,h-7);
+}
+// 光の側にも、手を見つけた場所に輪を出す（小窓を出しているときだけ）
+function drawAim(){
+  if(!camOn)return;
+  for(const t of targets){ctx.strokeStyle=t.fist?'#ff6b6b':'#ffe066';ctx.lineWidth=2;ctx.beginPath();ctx.arc(t.x,t.y,26,0,6.283);ctx.stroke()}
 }
 // カメラを起動していないときは、マウスや指が手の代わりになる（押すと「握る」）
 const surface=$('surface');
@@ -242,9 +263,11 @@ $('go').onclick=async()=>{
   const err=$('err');err.hidden=true;$('go').disabled=true;$('go').textContent='準備中…';
   try{
     await startCam();
-    const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/wasm");
-    hands=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",delegate:"CPU"},runningMode:"VIDEO",numHands:2});
-    pose=await PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",delegate:"CPU"},runningMode:"VIDEO",numPoses:4,outputSegmentationMasks:true}).catch(()=>null);
+    const w=new Worker('/vision-worker.mjs',{type:'module'});
+    await new Promise((ok,ng)=>{w.onmessage=({data:m})=>{if(m.type==='ready')ok();else if(m.type==='error')ng(new Error(m.message))};w.onerror=e=>ng(new Error(e.message||'認識の準備に失敗しました'));w.postMessage({type:'init'})});
+    w.onmessage=({data:m})=>{if(m.type==='result')onVision(m)};
+    vision=w;hands=true;
+    if(!AUTO)setCamView(true);
     $('st').textContent=isOpenNow?'動作中':'閉館中';$('go').textContent='動作中';
   }catch(e){
     err.hidden=false;err.textContent='起動できませんでした：'+(e&&e.name==='NotAllowedError'?'カメラの使用が許可されていません。':String(e&&e.message||e));
@@ -257,6 +280,7 @@ $('body').onclick=()=>{bodyOn=!bodyOn;if(!bodyOn)body=null;markBody()};
 $('ear').onclick=async()=>{if(ear){stopEar();markEar(false)}else{try{await startEar();markEar(true)}catch(e){say('マイクを使えませんでした')}}};
 $('vol').oninput=e=>audio.setVolume(Number(e.target.value));
 $('bgo').oninput=e=>document.documentElement.style.setProperty('--bgo',e.target.value);
+$('camv').onclick=()=>setCamView(!camOn);
 $('shadow').onclick=e=>{showShadow=!showShadow;e.currentTarget.setAttribute('aria-pressed',showShadow)};
 
 // ---- 描画 ----
@@ -280,6 +304,7 @@ function step(){
     ctx.fillStyle=p.c;
     if(form.draw==='streak')ctx.fillRect(p.x,p.y,1.2,4+p.k*5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill()}
   }
+  drawAim();drawCamView();
   copySurfaces();
   requestAnimationFrame(step);
 }
@@ -323,6 +348,7 @@ addEventListener('keydown',e=>{
   if(maskEdit){maskKey(e);return}
   if(e.key==='h'||e.key==='H')$('panel').classList.toggle('hide');
   if(e.key==='q'||e.key==='Q')toggleQr();
+  if(e.key==='c'||e.key==='C')setCamView(!camOn);
   if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
   // M は Maptastic 自身の Shift+Space と同じ働き
   if((e.key==='m'||e.key==='M')&&mapper&&mapper.setConfigEnabled){mapper._mOn=!mapper._mOn;mapper.setConfigEnabled(mapper._mOn)}
