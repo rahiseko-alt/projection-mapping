@@ -1,0 +1,32 @@
+{
+  "id": "ripple",
+  "name": "水の波紋",
+  "edge": "wrap",
+  "draw": "dot",
+  "code": "const n = Math.floor(p.a / 6.29 * 4), u = t * .2 * sp + n * .25 + p.k * .03, ph = u - Math.floor(u), R = ph * Math.min(W, H) * .45 + 6, g = p.a * 13 + p.k * 50; p.vx = p.vx * .8 + (f.x + Math.cos(g) * R - p.x) * .08; p.vy = p.vy * .8 + (f.y + Math.sin(g) * R - p.y) * .08;",
+  "preset": {
+    "colors": [
+      "#9be7ff",
+      "#4aa8ff",
+      "#e8fbff"
+    ],
+    "speed": 1,
+    "count": 700,
+    "reply": "手の位置から波紋が広がります",
+    "keys": [
+      "波紋",
+      "しずく",
+      "水面",
+      "波",
+      "水"
+    ]
+  },
+  "sound": {
+    "base": 180,
+    "wave": "sine",
+    "bright": 0.6,
+    "pulse": 1,
+    "scale": "calm"
+  },
+  "createdAt": "2026-11-25T23:00:40.401Z"
+}

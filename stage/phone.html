@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>意思を持つ光 スマホ</title>
+<style>
+:root{color-scheme:dark;--bg:#07080b;--ink:#eef0f4;--mute:#9aa0ab;--line:rgba(255,255,255,.16);--acc:#7fe3d0}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{display:flex;flex-direction:column;height:100%;padding:16px 16px calc(16px + env(safe-area-inset-bottom));gap:12px}
+h1{font-size:18px;margin:0}
+p{margin:0;color:var(--mute);font-size:14px}
+#pad{flex:1;min-height:200px;border-radius:16px;border:1px solid var(--line);background:radial-gradient(circle at 50% 40%,#123 0,#07080b 70%);touch-action:none;display:grid;place-items:center;color:var(--mute);font-size:14px;user-select:none}
+form{display:flex;gap:8px}
+input{flex:1;min-width:0;height:48px;border-radius:24px;border:1px solid var(--line);background:#0d0f14;color:var(--ink);padding:0 16px;font:inherit;font-size:16px}
+button{height:48px;padding:0 18px;border-radius:24px;border:0;background:var(--acc);color:#05201b;font:inherit;font-weight:700}
+button:disabled{opacity:.5}
+#st{font-size:13px}
+</style>
+</head>
+<body>
+<main>
+  <h1>意思を持つ光</h1>
+  <p>下の四角をなでると、壁の光が動きます。たたくと光がはじけます。</p>
+  <div id="pad" role="application" aria-label="光を動かす場所">ここをなでる</div>
+  <form id="talk"><input id="msg" maxlength="40" autocomplete="off" placeholder="光に話しかける（40字まで）" aria-label="光に話しかける"><button id="send">送る</button></form>
+  <p id="st">つないでいます…</p>
+</main>
+<script>
+const $=id=>document.getElementById(id);let ws=null,last=0;
+function connect(){
+  ws=new WebSocket(`ws://${location.host}/phone-ws`);
+  ws.onopen=()=>{$('st').textContent='つながりました'};
+  ws.onclose=()=>{$('st').textContent='つなぎ直しています…';setTimeout(connect,3000)};
+  ws.onmessage=e=>{try{if(JSON.parse(e.data).type==='ok')$('st').textContent='届きました。光が答えます'}catch{}};
+}
+connect();
+const send=o=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify(o))};
+const pad=$('pad');
+function pos(e){const r=pad.getBoundingClientRect();return{x:Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)),y:Math.min(1,Math.max(0,(e.clientY-r.top)/r.height))}}
+pad.addEventListener('pointerdown',e=>{pad.setPointerCapture(e.pointerId);send({type:'touch',...pos(e),tap:true})});
+pad.addEventListener('pointermove',e=>{if(!e.buttons&&e.pointerType==='mouse')return;const t=performance.now();if(t-last<70)return;last=t;send({type:'touch',...pos(e)})});
+$('talk').onsubmit=e=>{e.preventDefault();const t=$('msg').value.trim();if(!t)return;send({type:'speech',text:t});$('msg').value='';$('send').disabled=true;$('st').textContent='送りました';setTimeout(()=>{$('send').disabled=false},5000)};
+</script>
+</body>
+</html>

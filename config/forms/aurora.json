@@ -1,0 +1,32 @@
+{
+  "id": "aurora",
+  "name": "オーロラ",
+  "edge": "wrap",
+  "draw": "dot",
+  "code": "const yc = H * .4 + Math.sin(p.x * .006 + t * .4 * sp) * H * .12 + Math.sin(p.x * .015 - t * .7 * sp) * H * .04, yo = Math.sin(p.a * 3) * H * .16 * p.k; p.vx = p.vx * .94 + (.12 + .06 * Math.sin(p.a + t * .5)) * sp; p.vy = p.vy * .9 + (yc + yo - p.y) * .008; if (d < 240) { const w = 1 - d / 240; p.vy += Math.sin(d * .05 - t * 4 * sp) * 1.2 * w; p.vx += Math.cos(d * .05 - t * 4 * sp) * .3 * w; }",
+  "preset": {
+    "colors": [
+      "#33ffaa",
+      "#4488ff",
+      "#aa55ff"
+    ],
+    "speed": 1,
+    "count": 600,
+    "reply": "オーロラの光が、手に波打ちます。",
+    "keys": [
+      "オーロラ",
+      "ゆらめく",
+      "波打つ",
+      "極光",
+      "カーテン"
+    ]
+  },
+  "createdAt": "2026-11-25T12:55:43.359Z",
+  "sound": {
+    "base": 131,
+    "wave": "triangle",
+    "bright": 0.55,
+    "pulse": 0.25,
+    "scale": "calm"
+  }
+}

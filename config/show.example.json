@@ -1,0 +1,8 @@
+{
+  "days": [1, 2, 3, 4, 5, 6, 7],
+  "open": "10:00",
+  "close": "18:00",
+  "screenX": 1920,
+  "screenY": 0,
+  "autoReview": true
+}
