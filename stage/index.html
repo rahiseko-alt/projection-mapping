@@ -137,12 +137,14 @@ $('mic').onclick=()=>{wantVoice=!wantVoice;if(wantVoice)startVoice();else rec&&r
 
 // ---- カメラと認識（CPU） ----
 function coverMap(nx,ny){const vw=video.videoWidth||640,vh=video.videoHeight||480,s=Math.max(W/vw,H/vh),dw=vw*s,dh=vh*s;return{x:(1-nx)*dw-(dw-W)/2,y:ny*dh-(dh-H)/2}}
-let frame=0;
+// 認識は CPU で重いので、描画とは別の間隔で行う（光は毎コマ描き、認識は手=1秒15回・体=1秒3回まで）
+const HAND_MS=66,POSE_MS=330;let lastHand=0,lastPose=0;
 function detect(){
   if(!isOpenNow)return;
   if(!hands||video.readyState<2||video.currentTime===lastVT)return;
-  lastVT=video.currentTime;frame++;
   const now=performance.now();
+  if(now-lastHand<HAND_MS)return;
+  lastVT=video.currentTime;lastHand=now;
   const r=hands.detectForVideo(video,now);
   targets=(r.landmarks||[]).map((lm,i)=>{
     const tip=coverMap(lm[8].x,lm[8].y),w=lm[0],m=lm[9],palm=Math.hypot(w.x-m.x,w.y-m.y)+1e-3;
@@ -150,8 +152,8 @@ function detect(){
     if(fist&&!fists[i]){burst(tip);audio.chime();send({type:'gesture',kind:'fist'})}
     fists[i]=fist;return{...tip,fist};
   });
-  // 体の認識は重いので、数フレームに1回だけ行う
-  if(pose&&frame%6===0){
+  if(pose&&now-lastPose>=POSE_MS){
+    lastPose=now;
     const pr=pose.detectForVideo(video,now);people=(pr.landmarks||[]).length;audio.setPresence(people);
     // 人の形: 何人いても1枚の升目に重ねる
     const masks=pr.segmentationMasks||[];
