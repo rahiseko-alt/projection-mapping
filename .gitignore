@@ -5,3 +5,4 @@ media/*
 !media/README.md
 .chrome-show/
 config/show.json
+config/layout.json

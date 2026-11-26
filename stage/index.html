@@ -28,6 +28,9 @@ button,input{font:inherit}
 #panel button.main{background:var(--acc);color:#05201b;border:0;font-weight:700}
 #panel input{flex:1 1 200px;height:40px;border-radius:20px;border:1px solid var(--line);background:#0b0d12;color:var(--ink);padding:0 14px}
 #panel.hide{display:none}
+#masks{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:8}
+#masks.edit{pointer-events:auto;cursor:crosshair}
+canvas.extra{position:absolute;left:0;top:0;width:100vw;height:100vh}
 #night{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity 3s;z-index:9}
 #night.on{opacity:1}
 #qr{position:absolute;right:2vmin;bottom:2vmin;width:15vmin;padding:1vmin;background:#fff;border-radius:1vmin;display:none;text-align:center;color:#000;font-size:1.6vmin;line-height:1.3}
@@ -40,13 +43,14 @@ body.auto{cursor:none}
 <body>
 <video id="cam" playsinline muted></video>
 <div id="surface"><div id="bg"></div><canvas id="stage"></canvas><p id="reply" role="status" aria-live="polite"></p><div id="qr" aria-hidden="true"></div></div>
+<canvas id="masks"></canvas>
 <div id="night"></div>
 <div id="panel">
   <h1>意思を持つ光</h1>
   <p>状態：<b id="st">停止中</b>　／　人：<b id="people">0</b>　手：<b id="hands">0</b>　場面：<b id="formName">漂う群れ</b></p>
   <p>受付役：<b id="link">未接続</b>　声：<b id="voice">止まっている</b>　スマホ：<b id="phones">0</b></p>
   <p>カメラを起動する前は、マウスや指が手の代わりになります（押すと光がはじける）</p>
-  <p>Q スマホ参加の QR コードを出す・消す</p>
+  <p>Q スマホ参加の QR コードを出す・消す　K 黒く塗る区域を描く（クリックで点、Enter で閉じる、Backspace で戻す、もう一度 K で終了）</p>
   <p>H 操作板を隠す　F 全画面　M 四隅の補正（四隅をドラッグ、もう一度 M で終了）</p>
   <div class="row">
     <button class="main" id="go" type="button">カメラを起動して始める</button>
@@ -77,6 +81,7 @@ const MOVES=Object.fromEntries(BUILTIN_FORMS.map(f=>[f.id,f]));
 try{for(const def of await (await fetch('/api/forms')).json()){const r=loadCustomForm(def);if(r.form){MOVES[def.id]=r.form;registerForm({id:def.id,name:r.form.name});if(def.sound)SOUNDS[def.id]=def.sound}}}catch(e){}
 const $=id=>document.getElementById(id);
 const AUTO=new URLSearchParams(location.search).get('auto')==='1';
+const surfaceList=['surface']; // 投影面（2枚目からは後で足す）
 const cv=$('stage'),ctx=cv.getContext('2d'),video=$('cam');
 const S={form:'swarm',colors:['#7fe3d0','#3aa8c1','#e8fff9'],speed:1,count:550};
 const history=[];
@@ -273,27 +278,47 @@ function step(){
     ctx.fillStyle=p.c;
     if(form.draw==='streak')ctx.fillRect(p.x,p.y,1.2,4+p.k*5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.283);ctx.fill()}
   }
+  copySurfaces();
   requestAnimationFrame(step);
 }
 requestAnimationFrame(step);
 
-// ---- 投影の補正（Maptastic）と操作キー ----
-let mapper=null;
-try{const {Maptastic}=await import("/vendor/maptastic/maptastic.js");mapper=new Maptastic({layers:['surface'],autoSave:true,autoLoad:true,crosshairs:true,labels:false})}catch(e){console.warn('maptastic を読み込めませんでした',e)}
-// ---- 展示用（?auto=1）: 操作板を隠し、カメラと音を自動で始める ----
-if(AUTO){
-  document.body.classList.add('auto');$('panel').classList.add('hide');
-  setTimeout(async()=>{
-    $('go').click();
-    if(isOpenNow){try{await audio.start(soundFor(S.form,SOUNDS));markSound(true)}catch(e){}}
-    try{await startEar();markEar(true)}catch(e){}
-    toggleQr(true,true);
-    // カメラが止まったら（つなぎ直しなど）、1分後にもう一度試す
-    setInterval(()=>{if(!hands&&!$('go').disabled)$('go').click()},60000);
-  },800);
+// ---- 投影の合わせ方: 面ごとの四隅の補正（Maptastic）と、黒く塗る区域。受付役の config/layout.json に保存する ----
+let mapper=null,layout={count:1,surfaces:[],masks:[]},saveT=null;
+try{layout=await (await fetch('/api/layout')).json()}catch(e){}
+for(let i=2;i<=layout.count;i++){const c=document.createElement('canvas');c.id='surface'+i;c.className='extra';c.width=W;c.height=H;document.body.insertBefore(c,$('masks'));surfaceList.push(c.id)}
+// 2枚目からの面には、1枚目の光をそのまま写す
+function copySurfaces(){for(let i=1;i<surfaceList.length;i++){const c=$(surfaceList[i]);if(c.width!==W){c.width=W;c.height=H}const x=c.getContext('2d');x.clearRect(0,0,W,H);x.drawImage(cv,0,0,W,H)}}
+function saveLayout(){clearTimeout(saveT);saveT=setTimeout(()=>{fetch('/api/layout',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({surfaces:mapper?mapper.getLayout():layout.surfaces,masks:layout.masks})}).catch(()=>{})},500)}
+try{
+  const {Maptastic}=await import("/vendor/maptastic/maptastic.js");
+  mapper=new Maptastic({layers:surfaceList,autoSave:false,autoLoad:false,crosshairs:true,labels:surfaceList.length>1,onchange:saveLayout});
+  let saved=layout.surfaces;
+  // 前の版でこのブラウザに残した補正があれば、受付役へ移す
+  if(!saved.length){try{saved=JSON.parse(localStorage.getItem('maptastic.layers')||'[]')}catch(e){saved=[]}if(saved.length)setTimeout(saveLayout,1000)}
+  if(saved.length)mapper.setLayout(saved.filter(l=>surfaceList.includes(l.id)));
+}catch(e){console.warn('maptastic を読み込めませんでした',e)}
+
+const mk2=$('masks'),mctx=mk2.getContext('2d');let maskEdit=false,draft=[];
+function drawMasks(){
+  if(mk2.width!==W){mk2.width=W;mk2.height=H}
+  mctx.clearRect(0,0,W,H);mctx.fillStyle='#000';
+  const poly=(pts)=>{mctx.beginPath();pts.forEach(([x,y],i)=>i?mctx.lineTo(x*W,y*H):mctx.moveTo(x*W,y*H));mctx.closePath()};
+  for(const m of layout.masks){poly(m);mctx.fill();if(maskEdit){mctx.strokeStyle='#ff4040';mctx.lineWidth=2;mctx.stroke()}}
+  if(maskEdit&&draft.length){mctx.strokeStyle='#ffd040';mctx.lineWidth=2;mctx.beginPath();draft.forEach(([x,y],i)=>i?mctx.lineTo(x*W,y*H):mctx.moveTo(x*W,y*H));mctx.stroke();draft.forEach(([x,y])=>{mctx.beginPath();mctx.arc(x*W,y*H,5,0,6.283);mctx.stroke()})}
 }
+mk2.addEventListener('pointerdown',e=>{if(!maskEdit)return;draft.push([e.clientX/W,e.clientY/H]);drawMasks()});
+function maskKey(e){
+  if(e.key==='Enter'&&draft.length>=3){layout.masks.push(draft);draft=[];saveLayout()}
+  else if(e.key==='Backspace'){if(draft.length)draft.pop();else layout.masks.pop();saveLayout()}
+  else if(e.key==='Escape'){draft=[]}
+  drawMasks();
+}
+drawMasks();addEventListener('resize',drawMasks);
 addEventListener('keydown',e=>{
   if(e.target.tagName==='INPUT')return;
+  if(e.key==='k'||e.key==='K'){maskEdit=!maskEdit;draft=[];mk2.classList.toggle('edit',maskEdit);drawMasks();return}
+  if(maskEdit){maskKey(e);return}
   if(e.key==='h'||e.key==='H')$('panel').classList.toggle('hide');
   if(e.key==='q'||e.key==='Q')toggleQr();
   if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}

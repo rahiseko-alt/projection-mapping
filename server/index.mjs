@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import QRCode from 'qrcode';
 import { createPhoneGate, lanAddress, isLoopback } from './phone.mjs';
+import { sanitizeLayout, surfaceCount } from '../shared/layout.mjs';
+import { writeFile } from 'node:fs/promises';
 import { createLog } from './log.mjs';
 import { createDirector } from './director.mjs';
 import { createBrain } from './brain.mjs';
@@ -51,6 +53,18 @@ async function handle(req, res) {
   // ほかの機械（スマホ）から見られるのは、スマホ用のページだけ
   if (!isLoopback(req.socket.remoteAddress)) { if (!PHONE || !PHONE_FILES.has(p)) { res.writeHead(403).end(); return; } }
   if (p === '/phone') p = '/phone.html';
+  if (p === '/api/layout') {
+    const file = path.join(root, 'config/layout.json');
+    if (req.method === 'PUT') {
+      let body = '';
+      for await (const chunk of req) { body += chunk; if (body.length > 65536) { res.writeHead(413).end(); return; } }
+      let layout; try { layout = sanitizeLayout(JSON.parse(body)); } catch { res.writeHead(400).end(); return; }
+      await writeFile(file, JSON.stringify(layout, null, 2) + '\n');
+      res.writeHead(204).end(); return;
+    }
+    const layout = sanitizeLayout(await readFile(file, 'utf8').then(JSON.parse).catch(() => ({})));
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify({ count: surfaceCount(show), ...layout })); return;
+  }
   if (p === '/api/phone') {
     const body = phoneUrl ? { url: phoneUrl, svg: await QRCode.toString(phoneUrl, { type: 'svg', margin: 1, color: { dark: '#000000', light: '#ffffff' } }) } : { url: null };
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' }).end(JSON.stringify(body)); return;
