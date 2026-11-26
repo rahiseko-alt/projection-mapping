@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createCreatorTools, MAX_ATTEMPTS } from '../../server/creator.mjs';
 
@@ -13,7 +14,7 @@ function rig() {
 test('確かめと試し動かしを通った場面だけを保存する', async () => {
   const { t, files } = rig();
   assert.match(await t.saveForm(good), /保存しました/);
-  const saved = JSON.parse(files['/r/config/forms/aurora2.json']);
+  const saved = JSON.parse(files[path.join('/r', 'config/forms', 'aurora2.json')]);
   assert.equal(saved.preset.keys[0], 'オーロラ');
 });
 
@@ -39,6 +40,6 @@ test('元からある場面の id は使えない', async () => {
 test('作った場面には、範囲に収めた音も一緒に保存する', async () => {
   const { t, files } = rig();
   await t.saveForm({ ...good, id: 'aurora3', sound: { base: 1000, wave: 'sine', bright: 0.5, pulse: 0.3, scale: 'calm' } });
-  const saved = JSON.parse(files['/r/config/forms/aurora3.json']);
+  const saved = JSON.parse(files[path.join('/r', 'config/forms', 'aurora3.json')]);
   assert.equal(saved.sound.base, 400);
 });
